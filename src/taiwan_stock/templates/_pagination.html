@@ -1,0 +1,7 @@
+{% macro pagination(page, total_pages, page_link, label) -%}
+<nav class="pagination" aria-label="{{ label }}">
+  {% if page > 1 %}<a href="{{ page_link(1) }}">第一頁</a><a href="{{ page_link(page - 1) }}" rel="prev">上一頁</a>{% else %}<span aria-disabled="true">第一頁</span><span aria-disabled="true">上一頁</span>{% endif %}
+  <span class="page-position">第 {{ page }} 頁／共 {{ total_pages }} 頁</span>
+  {% if page < total_pages %}<a href="{{ page_link(page + 1) }}" rel="next">下一頁</a><a href="{{ page_link(total_pages) }}">最後一頁</a>{% else %}<span aria-disabled="true">下一頁</span><span aria-disabled="true">最後一頁</span>{% endif %}
+</nav>
+{%- endmacro %}

@@ -1,0 +1,123 @@
+name: Continuous Integration
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  python-check:
+    name: Python Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+
+      - name: Install Dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install -r requirements-dev.txt
+          pip install -e .
+
+      - name: Set up Node for browser controller tests
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+
+      - name: Lint & Format Check
+        shell: bash
+        run: |
+          ruff format --check .
+          ruff check .
+
+      - name: Dependency Audit
+        shell: bash
+        run: |
+          pip-audit -r requirements.txt
+          pip-audit -r requirements-dev.txt
+
+      - name: Run Tests
+        shell: bash
+        run: |
+          pytest --cov=src --cov-report=term-missing --cov-fail-under=80
+
+  package-check:
+    name: Package Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.13'
+
+      - name: Build Wheel
+        shell: bash
+        run: python -m pip wheel . --no-deps -w dist
+
+      # Design 066: only the wheel, so an undeclared dependency or a missing
+      # package file fails here.
+      - name: Install Wheel Into a Clean Environment
+        shell: bash
+        run: |
+          python -m venv "$RUNNER_TEMP/clean"
+          "$RUNNER_TEMP/clean/bin/python" -m pip install dist/*.whl
+
+      - name: Smoke Test Installed Package
+        shell: bash
+        run: '"$RUNNER_TEMP/clean/bin/python" scripts/smoke_installed_package.py'
+
+  pre-commit-check:
+    name: Pre-commit Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Run Pre-commit Hooks
+        shell: bash
+        run: pipx run pre-commit run --all-files
+
+  ci-check:
+    name: ci-check
+    runs-on: ubuntu-latest
+    needs: [python-check, package-check, pre-commit-check]
+    if: always()
+    steps:
+      - name: Evaluate Results
+        shell: bash
+        run: |
+          RESULT_PROJECT="${{ needs.python-check.result }}"
+          RESULT_PACKAGE="${{ needs.package-check.result }}"
+          RESULT_PRE_COMMIT="${{ needs.pre-commit-check.result }}"
+
+          if [ "$RESULT_PROJECT" = "failure" ] || [ "$RESULT_PROJECT" = "cancelled" ]; then
+            echo "Project check failed or was cancelled."
+            exit 1
+          fi
+
+          if [ "$RESULT_PACKAGE" = "failure" ] || [ "$RESULT_PACKAGE" = "cancelled" ]; then
+            echo "Package check failed or was cancelled."
+            exit 1
+          fi
+
+          if [ "$RESULT_PRE_COMMIT" = "failure" ] || [ "$RESULT_PRE_COMMIT" = "cancelled" ]; then
+            echo "Pre-commit check failed or was cancelled."
+            exit 1
+          fi
+
+          echo "Project check passed."

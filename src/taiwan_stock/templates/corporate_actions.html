@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% from "_actions.html" import sync_button, create_link with context %}
+{% macro account_reviews(action_id) -%}
+  {% for account in review_accounts.get(action_id, []) %}<p><a href="/corporate-actions/{{ action_id }}/review?broker_account_id={{ account.id|urlencode }}">{{ account.name }} · {{ account.state }}</a></p>{% endfor %}
+{%- endmacro %}
+{% block title %}股票異動 - 台灣股市數據工具{% endblock %}
+{% block content %}
+{% set view = 'dividends' if request.query_params.get('view') == 'dividends' and not error and request.query_params.get('new') != '1' else 'actions' %}
+<section class="workspace-controls" aria-label="股票異動操作"><div class="workspace-heading">
+  <h1>股票異動</h1>
+  <div class="actions page-actions" role="group" aria-label="頁面操作">
+    <form method="post" action="/corporate-actions/sync" data-sync-operation="stock-announcements" class="inline-form sync-form"><input type="hidden" name="request_key" value="{{ sync_keys['stock-announcements'] }}">{{ sync_button('stock-announcements', '同步除權息公告', '同步交易所除權息預告，並補齊已交易或追蹤股票的歷史現金股利及發放日') }}</form>
+    {{ create_link('/corporate-actions?new=1#new-action', '手動補登') }}
+<details class="workspace-tools">
+  <summary class="button secondary">資料說明</summary><div class="workspace-tools-body">
+  <p class="subtitle">同步 TWSE、TPEx 近期除權息預告，並補齊已交易或追蹤股票的歷史現金股利與可取得的發放日。這裡不是全市場完整歷史；發放日尚未取得時，領息月曆會顯示「待確認」。</p>
+  <p class="subtitle">分割與股票股利會自動納入持股股數計算；現金減資與其他異動需另外確認處理。公告缺漏時可用「手動補登」新增股數異動。</p>
+</div></details>
+
+
+  </div>
+</div>
+<div class="workspace-toolbar">    <nav class="tabs" aria-label="異動資料類型">
+      <a href="/corporate-actions"{% if view == 'actions' %} aria-current="page"{% endif %}>股數異動（{{ actions | length }}）</a>
+      <a href="/corporate-actions?view=dividends"{% if view == 'dividends' %} aria-current="page"{% endif %}>現金配息</a>
+    </nav>
+<a class="workspace-related" href="/income-calendar">查看個人領息月曆 →</a></div>
+{% if error or request.query_params.get("new") == "1" %}
+<details class="page-tools" id="new-action" open>
+  <summary>手動補登股票異動</summary>
+  <form method="post" action="/corporate-actions" class="toolbar-form workspace-filterbar">
+    <label>商品代碼<input name="security_code" list="securities-list" placeholder="商品代碼" value="{{ form_values.security_code or '' }}" required /></label>
+    <datalist id="securities-list">
+      {% for security in securities %}
+      <option value="{{ security.code }}">{{ security.name }}</option>
+      {% endfor %}
+    </datalist>
+    <label>異動類型<select name="action_type" required>
+      <option value="split"{% if form_values.action_type == "split" %} selected{% endif %}>分割</option>
+      <option value="stock_dividend"{% if form_values.action_type == "stock_dividend" %} selected{% endif %}>股票股利</option>
+      <option value="cash_capital_reduction"{% if form_values.action_type == "cash_capital_reduction" %} selected{% endif %}>現金減資</option>
+      <option value="other"{% if form_values.action_type == "other" %} selected{% endif %}>其他</option>
+    </select></label>
+    <label>生效日<input type="date" name="ex_date" value="{{ form_values.ex_date or '' }}" required /></label>
+    <label>分割用 — 原始股數 <input type="number" name="from_shares" value="{{ form_values.from_shares or '' }}" placeholder="例如 1" min="1"></label>
+    <label>換股後股數 <input type="number" name="to_shares" value="{{ form_values.to_shares or '' }}" placeholder="例如 4" min="1"></label>
+    <label>股票股利用 — 每千股配股數 <input type="number" name="per_thousand_shares" value="{{ form_values.per_thousand_shares or '' }}" placeholder="例如 50" min="1"></label>
+    <label>備註<input name="note" placeholder="備註（現金減資／其他請說明事件內容）" value="{{ form_values.note or '' }}" /></label>
+    <button type="submit">儲存異動</button>
+  </form>
+  <a href="/corporate-actions">關閉補登</a>
+</details>
+{% endif %}
+
+</section>
+{% if synced %}<div class="notice success" role="status">同步完成：{{ synced }}</div>{% endif %}
+{% if sync_error %}<div class="notice error" role="alert">同步失敗：{{ sync_error }}</div>{% endif %}
+{% if error %}
+<div class="notice error"><span aria-hidden="true">×</span><div>{{ error }}</div></div>
+{% endif %}
+
+<section class="panel corporate-action-records workspace-data" aria-labelledby="records-heading">
+  <div class="panel-heading workspace-data-heading"><h2 id="records-heading">{{ "股數異動" if view == "actions" else "現金配息" }}</h2>
+    <small>{% if view == 'actions' %}依生效日排序{% else %}依除息日排序，最新 {{ distributions | length }} 筆（最多 100 筆）{% endif %}</small>
+  </div>
+  {% if view == 'actions' %}
+  <div class="table-wrap desktop-record-table" tabindex="0" role="region" aria-label="股數異動表格，可水平捲動">
+    <table class="actions-table">
+      <thead>
+        <tr>
+          <th class="col-date">生效日</th>
+          <th class="col-name">商品</th>
+          <th class="col-status">類型</th>
+          <th class="col-number">比例</th>
+          <th class="col-notes">備註／人工確認</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for action in actions %}
+        <tr>
+          <th scope="row" class="col-date">{{ action.ex_date }}</th>
+          <td class="col-name">{{ action.security_code }} {{ action.security_name }}</td>
+          <td class="col-status">{{ action_type_labels[action.action_type] }}<br><small>{{ "手動輸入" if action.source == "manual" else "官方資料" }}</small></td>
+          <td class="col-number">
+            {% if action.ratio_numerator is not none %}{{ action.ratio_numerator }}/{{ action.ratio_denominator }}{% else %}—{% endif %}
+          </td>
+          <td class="col-notes">{{ action.note or "—" }}{{ account_reviews(action.id) }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="5" class="empty">還沒有股票異動紀錄</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <ul class="mobile-records" aria-label="股數異動">
+    {% for action in actions %}<li>
+      <div class="mobile-record-head"><strong>{{ action.security_code }} {{ action.security_name }}</strong><span>{{ action_type_labels[action.action_type] }}</span></div>
+      <p class="inline-meta">生效日 {{ action.ex_date }} · {{ "手動輸入" if action.source == "manual" else "官方資料" }}</p>
+      <p class="action-ratio">{% if action.ratio_numerator is not none %}比例 {{ action.ratio_numerator }}/{{ action.ratio_denominator }}{% else %}比例 —{% endif %}</p>
+      {% if action.note %}<p>{{ action.note }}</p>{% endif %}
+      {{ account_reviews(action.id) }}
+    </li>{% else %}<li class="empty">還沒有股票異動紀錄</li>{% endfor %}
+  </ul>
+  {% else %}
+  <div class="table-wrap desktop-record-table" tabindex="0" role="region" aria-label="現金配息表格，可水平捲動">
+    <table class="dividends-table">
+      <thead>
+        <tr>
+          <th class="col-date">除息日</th>
+          <th class="col-name">商品</th>
+          <th class="col-number">每股配息</th>
+          <th class="col-status">狀態</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in distributions %}
+        <tr>
+          <th scope="row" class="col-date">{{ d.ex_dividend_date }}</th>
+          <td class="col-name">{{ d.security_code }} {{ d.security_name }}</td>
+          <td class="col-number">{{ d.amount_per_share|number(none, true) }}</td>
+          <td class="col-status">{{ status_labels.get(d.amount_status, d.amount_status) }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="4" class="empty">還沒有配息資料，按上面「同步除權息公告」試試</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <ul class="mobile-records" aria-label="現金配息">
+    {% for d in distributions %}<li>
+      <div class="mobile-record-head"><strong>{{ d.security_code }} {{ d.security_name }}</strong><span>{{ status_labels.get(d.amount_status, d.amount_status) }}</span></div>
+      <p class="inline-meta">除息日 {{ d.ex_dividend_date }}</p><p>每股配息 {{ d.amount_per_share|number(none, true) }}</p>
+    </li>{% else %}<li class="empty">還沒有配息資料，請同步除權息公告</li>{% endfor %}
+  </ul>
+  {% endif %}
+</section>
+
+<section class="panel"><h2>官方比例修訂紀錄</h2>
+<p>保留更新當時的回放結果；修正交易後，當前警告會解除，歷史紀錄仍保留。</p>
+{% for revision in revisions %}<article id="revision-{{ revision.id }}">
+<h3>{{ revision.before.ex_date }} · {{ revision.security_id }}</h3>
+<p>{{ revision.changed_at|taipei_time }} · {{ revision.source }}：{{ revision.before.ratio_numerator }}/{{ revision.before.ratio_denominator }} → {{ revision.after.ratio_numerator }}/{{ revision.after.ratio_denominator }}</p>
+{% for impact in revision.impacts %}<p>帳戶 {{ impact.broker_account_id }}：{% if impact.after %}當時短少 {{ impact.after.shortfall }} 股 · <a href="/transactions/{{ impact.after.trade_id }}/edit">核對交易</a>{% elif impact.before %}當時衝突已解除{% else %}當時回放無超賣{% endif %}</p>{% endfor %}
+</article>{% else %}<p>尚無比例修訂紀錄；升級前的修訂不會推測補建。</p>{% endfor %}
+</section>
+{% endblock %}

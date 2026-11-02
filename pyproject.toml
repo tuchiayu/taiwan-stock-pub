@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=61.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "taiwan-stock"
+version = "0.1.0"
+description = "Local web app for tracking Taiwan stock & ETF holdings, dividends, and break-even prices with TWSE/TPEx data"
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+# Same pins as requirements.txt (design 066); tests/unit/test_packaging.py
+# fails when the two lists differ.
+dependencies = [
+    "fastapi==0.141.1",
+    "Jinja2==3.1.6",
+    "uvicorn==0.52.4",
+    "httpx2==2.12.0",
+    "tzdata==2025.2",
+    "python-multipart==0.0.32",
+]
+
+[project.scripts]
+taiwan-stock = "taiwan_stock.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"taiwan_stock" = ["templates/*.html", "migrations/*.sql", "static/*.css", "static/*.js"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+markers = ["real_workers: exercises actual independent OS processes"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]

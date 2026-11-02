@@ -1,0 +1,317 @@
+{% extends "base.html" %}
+{% from "_profile_value.html" import profile_value with context %}
+{% from "_cost_quality.html" import cost_quality %}
+{% from "_actions.html" import create_link with context %}
+{% block title %}{{ security.code }} {{ security.name }} - 台灣股市數據工具{% endblock %}
+{% block head %}<script src="/static/section-shortcuts.js?v=1" defer></script>{% endblock %}
+{% block content %}
+{% include "_history_warnings.html" %}
+{% for holding in holdings %}{% for warning in holding.pricing_warnings %}<p class="notice">{{ holding.security_code }}：{{ warning }}</p>{% endfor %}{% endfor %}
+<section class="workspace-controls" aria-label="商品操作"><div class="workspace-heading">
+  <div>
+    <h1>{{ security.name }}（{{ security.code }}）</h1>
+    <p class="inline-meta">{{ '股票' if security.security_type == 'stock' else 'ETF' }} · {{ security.market|market_label }} · {% if security.status == 'delisted' %}{{ '已下市' if security.market == 'TWSE' else '已下櫃' }}{% if security.delisted_date %}（{{ security.delisted_date }}）{% endif %}，保留歷史資料，略過日常同步{% elif is_tracked %}已追蹤{% else %}未追蹤，本頁僅即時預覽{% endif %}{% if security.status != 'delisted' and security.delisted_date %} · 預定{{ '下市' if security.market == 'TWSE' else '下櫃' }} {{ security.delisted_date }}{% endif %}</p>
+  </div>
+  <div class="actions page-actions" role="group" aria-label="頁面操作">
+    <a class="button secondary" href="/securities?security_type={{ security.security_type }}">返回商品查詢</a>
+    {{ create_link("/transactions?new=1&security_code=" ~ security.code ~ "&return_to=/securities/" ~ security.id ~ "#new-trade", "新增交易") }}
+    {% if is_tracked %}
+      <form method="post" action="/watchlist/remove" class="inline-form">
+        <input type="hidden" name="security_id" value="{{ security.id }}" />
+        <input type="hidden" name="return_to" value="/securities/{{ security.id }}" />
+        <button type="submit">取消追蹤</button>
+      </form>
+    {% else %}
+      <form method="post" action="/watchlist/add" class="inline-form">
+        <input type="hidden" name="security_id" value="{{ security.id }}" />
+        <input type="hidden" name="return_to" value="/securities/{{ security.id }}" />
+        <button type="submit">加入追蹤</button>
+      </form>
+    {% endif %}
+  </div>
+</div>
+</section>
+<nav class="workspace-shortcuts" aria-label="商品資料區塊" data-section-shortcuts><a href="#latest-quote">最新行情</a>{% if watch_item %}<a href="#watch-settings">追蹤設定</a>{% endif %}<a href="#distribution-history">配息歷史</a><a href="#security-profile">基本資料</a></nav>
+
+<section class="panel workspace-data workspace-detail">
+  <div class="workspace-data-heading"><h2 id="latest-quote">最新行情</h2></div>
+  {% if latest_close is not none %}
+  <p>
+    {{ close_date }} 收盤 {{ latest_close|number }}
+    {% if change is not none %}
+      {% if change > 0 %}
+        <span class="gain">（較前一有效交易日 +{{ change|number }}，+{{ change_pct|number(2, true) }}%）</span>
+      {% elif change < 0 %}
+        <span class="loss">（較前一有效交易日 {{ change|number }}，{{ change_pct|number(2, true) }}%）</span>
+      {% else %}
+        （較前一有效交易日持平）
+      {% endif %}
+    {% elif previous_close_date %}
+      （漲跌 —，前一交易日收盤未同步）
+    {% endif %}
+  </p>
+  {% else %}
+  <p class="empty">尚無同步行情。</p>
+  {% endif %}
+</section>
+
+{% if watchlist_saved %}<div class="notice success">追蹤設定已儲存。</div>{% endif %}
+{% if watchlist_error %}<div class="notice error">{{ watchlist_error }}</div>{% endif %}
+{% if watch_item %}
+<section class="panel workspace-data workspace-detail">
+  <div class="workspace-data-heading"><h2 id="watch-settings">追蹤設定</h2></div>
+  <p class="inline-meta">只記錄在本機，不會提醒；留空儲存即清除。</p>
+  <form method="post" action="/watchlist/details" class="toolbar-form watch-settings-form">
+    <input type="hidden" name="security_id" value="{{ security.id }}" />
+    <label>目標價<input name="target_price" inputmode="decimal" value="{{ watch_item.target_price or '' }}" placeholder="留空表示不設定" /></label>
+    <label>備註<input name="note" maxlength="200" value="{{ watch_item.note or '' }}" placeholder="留空表示不設定" /></label>
+    <button type="submit" class="secondary">儲存</button>
+  </form>
+</section>
+{% endif %}
+
+{% if holdings|length > 0 %}
+<section class="panel workspace-data workspace-detail">
+  <div class="workspace-data-heading"><h2>我的持股摘要</h2></div>
+  <div class="table-wrap" tabindex="0" role="region" aria-label="持股摘要表格，可水平捲動">
+    <table class="holdings-summary-table compact-table">
+      <thead>
+        <tr>
+          <th class="col-account">帳戶</th>
+          <th class="col-number">股數</th>
+          <th title="全部股數一起賣出、含手續費與證交稅的損益兩平價" class="col-number">回本價</th>
+          <th class="col-number">成本殖利率</th>
+          <th title="近 12 個月除息前一天實際持有的已確定配息 ÷ 同期間每天剩餘持有成本的平均" class="col-number">實際領息殖利率</th>
+          <th class="col-bank">領息銀行</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for h in holdings %}
+        <tr>
+          <th scope="row" class="col-account">{{ h.broker_account_name }} {{ cost_quality(h.cost_estimates, h.broker_account_id) }}</th>
+          <td class="col-number">{{ h.position.remaining_quantity|number(0) }}</td>
+          <td class="col-number">{{ h.breakeven_price|number }}</td>
+          <td class="col-number">{{ (h.cost_yield|number(2, true)) ~ "%" if h.cost_yield is not none else "—" }}{% if h.cost_yield_label %}<small class="cell-note">{{ h.cost_yield_label }}</small>{% endif %}</td>
+          <td class="col-number">{{ h.received_yield ~ "%" if h.received_yield is not none else "—" }}{% if h.received_yield_label %}<small class="cell-note">{{ h.received_yield_label }}</small>{% endif %}</td>
+          <td class="col-bank">
+            {% if h.dividend_bank_preference %}
+            <span class="badge">{{ h.dividend_bank_preference }}（自訂）</span>
+            {% else %}
+            <span class="badge">{{ h.account_default_bank or "尚未設定" }}（帳戶預設）</span>
+            {% endif %}
+            <details class="cell-editor">
+              <summary>{{ "修改領息銀行" if h.dividend_bank_preference else "設定領息銀行" }}</summary>
+              <form method="post" action="/securities/{{ security.id }}/broker-accounts/{{ h.broker_account_id }}/dividend-bank" class="inline-form">
+                <select name="dividend_bank">
+                  <option value="">（清除自訂，改用帳戶預設）</option>
+                  {% for bank in bank_options %}
+                  <option value="{{ bank }}" {% if h.dividend_bank_preference == bank %}selected{% endif %}>{{ bank }}</option>
+                  {% endfor %}
+                </select>
+                <button type="submit" class="secondary">儲存</button>
+              </form>
+            </details>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+<section class="panel workspace-data workspace-detail">
+  <div class="workspace-data-heading"><h2>配息殖利率</h2></div>
+  {# 設計 051 §4.2.2：兩個數字並排，計算過程收進「計算明細」。 #}
+  {% set freq_label = distribution_frequency_labels.get(yield_info.frequency, yield_info.frequency) %}
+  {% set basis = yield_info.estimate_basis %}
+  <div class="yield-stats">
+    <div class="yield-stat">
+      {# 設計 004 §4.6：完整近一年資料未確認前不稱「實際」，口徑為「依已知紀錄計算」。 #}
+      <h3 class="stat-label" title="依已知紀錄計算">近一年殖利率</h3>
+      <p class="yield-value">{% if yield_info.known_yield is not none %}{{ "%.2f"|format(yield_info.known_yield) }}%{% else %}—{% endif %}</p>
+      {% if yield_info.known_yield is not none and yield_info.selected %}
+      {# 設計 023 §4.2／046 §4.2.4：已知頻率取最近 N 次配息，頻率未知或變動才用近 12 個月區間。 #}
+      <p class="stat-note">{% if yield_info.basis == "by_count" %}依最近 {{ yield_info.expected_count }} 次配息（{{ freq_label }}）{% else %}依 {{ yield_info.start|replace("-", "/") }} 至 {{ yield_info.end|replace("-", "/") }} 的配息{% endif %}{% if yield_info.annualized_from %}，依 {{ yield_info.annualized_from }} 次推估{% endif %}</p>
+      {% endif %}
+      {% if yield_info.quality_label %}<p class="stat-note">{{ yield_info.quality_label }}</p>{% endif %}
+      {% for note in yield_info.notes %}<p class="stat-note">{{ note }}</p>{% endfor %}
+    </div>
+    <div class="yield-stat">
+      {# 設計 028 §4.4：以最近一次已確定配息年化，反映目前配息水準。 #}
+      <h3 class="stat-label">推估年配息率</h3>
+      <p class="yield-value">{% if yield_info.estimated_yield is not none %}{{ "%.2f"|format(yield_info.estimated_yield) }}%{% else %}—{% endif %}</p>
+      <p class="stat-note">
+        {% if yield_info.estimated_yield is not none %}依 {{ basis.ex_dividend_date|replace("-", "/") }} 每單位 {{ basis.amount_per_share|number(none, true) }} 元 × {{ yield_info.estimate_periods }} 次
+        {% elif yield_info.estimated_annual_cash is not none %}缺少有效收盤價，無法推估
+        {% elif yield_info.estimate_unavailable == "extra_distribution" %}最近一次疑似額外配息，無法推估
+        {% elif yield_info.estimate_unavailable == "no_final" %}尚無已確定配息，無法推估
+        {% elif yield_info.estimate_unavailable == "unadjustable" %}股數異動無法換算，無法推估
+        {% else %}配息頻率未知，無法推估{% endif %}
+      </p>
+    </div>
+  </div>
+  {% if (yield_info.known_yield is not none and yield_info.selected) or yield_info.estimated_yield is not none %}
+  <details class="yield-details">
+    <summary>計算明細</summary>
+    {% if yield_info.known_yield is not none and yield_info.selected %}
+    <p>近一年：{% if yield_info.basis == "by_count" %}{{ yield_info.window_start|replace("-", "/") }} 起最近 {{ yield_info.expected_count }} 次配息{% else %}{{ yield_info.start|replace("-", "/") }} 之後至 {{ yield_info.end|replace("-", "/") }}（含）的配息{% endif %}</p>
+    <div class="table-wrap">
+      <table class="compact-table yield-detail-table">
+        <thead><tr><th class="col-date">除息日</th><th class="col-number">每單位金額</th></tr></thead>
+        <tbody>
+          {% for d in yield_info.selected %}
+          <tr><td class="col-date">{{ d.ex_dividend_date|replace("-", "/") }}</td><td class="col-number">{{ d.amount_per_share|number(none, true) if d.amount_per_share is not none else "金額待確認" }}{% if d.share_adjusted %}<span class="cell-note">原 {{ d.original_amount_per_share|number(none, true) }}</span>{% endif %}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p>{% if yield_info.annualized_from %}合計每單位 {{ yield_info.cash_per_share|number(2, true) }} 元 ÷ {{ yield_info.annualized_from }} 次 × {{ yield_info.expected_count }} 次 = {{ yield_info.annual_cash_per_share|number(2, true) }} 元（推估）÷ 收盤 {{ latest_close|number }} 元（{{ close_date|replace("-", "/") }}）× 100% = {{ "%.2f"|format(yield_info.known_yield) }}%{% else %}合計每單位 {{ yield_info.cash_per_share|number(2, true) }} 元 ÷ 收盤 {{ latest_close|number }} 元（{{ close_date|replace("-", "/") }}）× 100% = {{ "%.2f"|format(yield_info.known_yield) }}%{% endif %}</p>
+    {% endif %}
+    {% if yield_info.estimated_yield is not none %}
+    <p>推估：每單位 {{ basis.amount_per_share|number(none, true) }} 元 × {{ yield_info.estimate_periods }} 次 ÷ 收盤 {{ latest_close|number }} 元（{{ close_date|replace("-", "/") }}）× 100% = {{ "%.2f"|format(yield_info.estimated_yield) }}%</p>
+    {% endif %}
+  </details>
+  {% endif %}
+  {% if security.security_type == "etf" and yield_info.updated_label %}<p class="subtitle">{{ yield_info.updated_label }}</p>{% endif %}
+</section>
+
+<section class="panel workspace-data workspace-detail">
+  <div class="workspace-data-heading"><h2 id="distribution-history">配息歷史</h2></div>
+  <p class="subtitle">{% if distribution_updated_label %}{{ distribution_updated_label }}。{% if distribution_scope_note %}{{ distribution_scope_note }}。{% endif %}{% else %}尚未同步配息資料。{% endif %}</p>
+  {% if distribution_history|length == 0 %}
+  <p class="empty">尚無已知配息事件。</p>
+  {% else %}
+  <div class="table-wrap" tabindex="0" role="region" aria-label="配息歷史表格，可水平捲動">
+    <table class="distribution-table compact-table">
+      <thead>
+        <tr>
+          <th class="col-date">除息日</th>
+          {% if security.security_type == "etf" %}
+          <th class="col-date">收益分配基準日</th>
+          {% endif %}
+          <th class="col-date">發放日</th>
+          <th class="col-number">每單位金額</th>
+          <th class="col-status">狀態</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in distribution_history %}
+        {# 設計 050 §4.2.3：早於第一次買進的配息保留供比較，淡色標示。 #}
+        {% set before_acquired = first_acquired and d.ex_dividend_date and d.ex_dividend_date < first_acquired %}
+        <tr{% if before_acquired %} class="before-acquired"{% endif %}>
+          <td class="col-date">{{ d.ex_dividend_date }}{% if before_acquired %}<span class="cell-note">買進前</span>{% endif %}</td>
+          {% if security.security_type == "etf" %}
+          <td class="col-date">{{ d.record_date or "—" }}</td>
+          {% endif %}
+          <td class="col-date">
+            {# 設計 004 §4.7.3：無發放日的已知事件標示「發放月份待確認」，不得改用除息月冒充。 #}
+            {{ d.pay_date or "發放月份待確認" }}
+          </td>
+          <td class="col-number">{{ d.amount_per_share|number(none, true) if d.amount_per_share is not none else "尚無可信來源" }}</td>
+          <td class="col-status">
+            {% if d.reconciliation_status == "needs_review" %}<span class="badge" title="{{ d.reconciliation_note }}">來源待覆核</span>
+            {% elif d.amount_status == "final" %}已公告
+            {% elif d.amount_status == "estimated" %}預估
+            {% else %}尚無可信來源{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</section>
+
+{% if holdings|length == 0 %}<p class="inline-meta workspace-data">尚未持有這檔商品，可使用上方「新增交易」記錄買進。</p>{% endif %}
+<section class="panel workspace-data workspace-detail workspace-key-values">
+  <div class="workspace-data-heading"><h2 id="security-profile">基本資料</h2></div>
+  <div class="table-wrap">
+    <table class="key-value-table">
+      <tbody>
+        <tr><th scope="row">市場</th><td class="col-text">{{ security.market|market_label }}</td></tr>
+        <tr><th scope="row">類型</th><td class="col-text">{{ "股票" if security.security_type == "stock" else "ETF" }}</td></tr>
+        {% if security.security_type == "stock" %}
+        <tr><th scope="row">產業別</th><td class="col-text">{{ security.industry|industry_name(security.market) }}</td></tr>
+        <tr><th scope="row">過戶機構</th><td class="col-text">{{ security.transfer_agent_name or "—" }}</td></tr>
+        <tr><th scope="row">過戶電話</th><td class="col-text">{{ security.transfer_agent_phone or "—" }}</td></tr>
+        {% else %}
+        <tr>
+          <th scope="row">保管銀行</th>
+          <td class="col-text">
+            {{ profile_value(custodian_bank_display, custodian_bank_display.value or "尚無可信來源", source_note=("交易所原始名稱：" ~ profile.custodian_institution_raw) if profile and profile.custodian_institution_raw and not show_raw_custodian else none) }}
+            {% if custodian_bank_display.tier == "share_class" %}
+            <span class="subtitle">沿用同一基金的新台幣主級別 {{ custodian_bank_display.from_code }}（依證交所基金統一編號、基金類型與追蹤指數判定）</span>
+            {% endif %}
+            {% if custodian_bank_display.tier == "user_override" and profile.custodian_bank and profile.custodian_bank != profile.custodian_bank_user_override %}
+            <p class="subtitle">系統已找到官方資料：{{ profile.custodian_bank }}，是否改用？
+              <form method="post" action="/securities/{{ security.id }}/custodian-bank-override" class="inline-form">
+                <input type="hidden" name="custodian_bank_user_override" value="" />
+                <button type="submit" class="secondary">改用官方資料</button>
+              </form>
+            </p>
+            {% endif %}
+            <details class="cell-editor">
+              <summary>{{ "修改自訂保管銀行" if custodian_bank_display.tier == "user_override" else "手動填入" }}</summary>
+              <form method="post" action="/securities/{{ security.id }}/custodian-bank-override" class="inline-form">
+                <select name="custodian_bank_user_override">
+                  <option value="">（清除自訂，改用自動資料）</option>
+                  {% for bank in bank_options %}
+                  <option value="{{ bank }}" {% if profile and profile.custodian_bank_user_override == bank %}selected{% endif %}>{{ bank }}</option>
+                  {% endfor %}
+                </select>
+                <button type="submit" class="secondary">儲存</button>
+              </form>
+            </details>
+          </td>
+        </tr>
+        {% if show_raw_custodian %}
+        <tr>
+          <th scope="row">來源原始保管機構</th>
+          <td class="col-text">{{ profile.custodian_institution_raw }}（僅供參考，非已確認保管銀行）</td>
+        </tr>
+        {% endif %}
+        <tr>
+          <th scope="row">配息頻率</th>
+          <td class="col-text">
+            {{ profile_value(distribution_frequency_display, distribution_frequency_display.label or "尚無可信來源", distribution_frequency_display.month_pattern if distribution_frequency_display.value != 'monthly' else none) }}
+            {% if not distribution_frequency_display.value and profile and profile.distribution_policy == "distributing" %}<span>有配息，頻率待確認</span>{% elif not distribution_frequency_display.value and distribution_history %}<span>有配息紀錄，頻率待確認；雙月配／半年配／年配須連續兩次確認間隔且橫跨年度資料齊全才會顯示。</span>{% endif %}
+            {% if distribution_frequency_display.tier == "inferred" and distribution_frequency_display.basis_dates %}
+            <span class="subtitle">依歷史配息紀錄（{{ distribution_frequency_display.basis_dates|join("、") }}）判斷，非官方確認</span>
+            {% endif %}
+            {% if distribution_frequency_display.tier == "share_class" %}
+            <span class="subtitle">沿用同一基金的新台幣主級別 {{ distribution_frequency_display.from_code }}</span>
+            {% endif %}
+            {% if distribution_frequency_display.tier == 'user_override' and profile.distribution_policy == 'non_distributing' and distribution_frequency_display.value != 'non_distributing' %}
+            <p class="subtitle">官方政策為不配息，目前保留使用者自訂頻率。</p>
+            {% endif %}
+            <details class="cell-editor">
+              <summary>{{ "修改自訂配息頻率" if distribution_frequency_display.tier == "user_override" else "手動填入" }}</summary>
+              <form method="post" action="/securities/{{ security.id }}/distribution-frequency-override" class="inline-form">
+                <select name="distribution_frequency_user_override">
+                  <option value="">（清除自訂，改用自動資料）</option>
+                  {% for key, label in distribution_frequency_labels.items() if key != "unknown" %}
+                  <option value="{{ key }}" {% if profile and profile.distribution_frequency_user_override == key %}selected{% endif %}>{{ label }}</option>
+                  {% endfor %}
+                </select>
+                <button type="submit" class="secondary">儲存</button>
+              </form>
+            </details>
+          </td>
+        </tr>
+        <tr><th scope="row">發行人</th><td class="col-text">{{ profile.issuer_name or "—" }}</td></tr>
+        <tr><th scope="row">掛牌日期</th><td class="col-text">{{ security.listed_date or "—" }}</td></tr>
+        <tr><th scope="row">追蹤指數</th><td class="col-text">{{ (profile.benchmark if profile else none) or "—" }}</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel workspace-data workspace-detail">
+  <div class="workspace-data-heading"><h2>資料來源與同步狀態</h2></div>
+  {% for label, source in [('保管銀行', bank_source), ('配息頻率／政策', frequency_source), ('發行人', basic_sources.get('issuer_name')), ('追蹤指數', basic_sources.get('benchmark')), ('掛牌日期', basic_sources.get('listed_date'))] %}
+  {% if source %}<p>{{ label }}：{{ source.get('issuer') or '交易所官方資料' }} · {{ source.get('fetched_at')|taipei_time }}{% if source.get('url') %} · <a href="{{ source.url }}" target="_blank" rel="noopener noreferrer">官方來源</a>{% endif %}{% if source.get('cross_check') == 'conflict' %}（來源不一致，待核對）{% endif %}</p>{% endif %}
+  {% endfor %}
+  {% if sync_units %}<ul>{% for unit in sync_units %}<li><a href="/catalog-sync-runs/{{ unit.run_id }}">{{ source_labels.get(unit.source, unit.source) }}{% if unit.period %} {{ unit.period }} 年{% endif %}：{{ status_labels.get(unit.status, unit.status) }} · {{ unit.attempted_at|taipei_time }}</a></li>{% endfor %}</ul>{% else %}<p>尚無完整同步紀錄；既有資料的回補完整性未確認。</p>{% endif %}
+</section>
+{% endblock %}

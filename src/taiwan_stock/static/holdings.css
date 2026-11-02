@@ -1,0 +1,138 @@
+/* Homepage holdings (design 012). */
+
+@media (min-width: 1100px) {
+  .holdings-stats { grid-template-columns: 1.35fr 1.35fr 1fr 1fr; }
+  .holdings-scroll-hint { display: none; }
+}
+
+.holdings-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+
+.holdings-table > thead > tr > th,
+.holdings-table > tbody > tr > th,
+.holdings-table > tbody > tr > td { padding-inline: 12px; white-space: nowrap; }
+.holdings-table > thead > tr > .col-account { width: 7rem; }
+.holdings-table > tbody > tr > .col-account { max-width: 10rem; white-space: normal; }
+.holdings-table > thead > tr > .col-name { width: 24%; }
+.holdings-table .text-left { text-align: left; }
+.holdings-table .stale-date { color: var(--warning); cursor: help; }
+.holdings-table .holding-name { display: flex; gap: 10px; align-items: center; }
+.holdings-table .holding-name > span { white-space: normal; min-width: 8em; }
+
+/* Sort headers: buttons are injected by holdings-table.js, so without JS
+   the header stays plain text instead of a control that does nothing. */
+.holdings-table .sort-button {
+  min-height: 28px;
+  padding: 0;
+  gap: 4px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  white-space: nowrap;
+}
+.holdings-table .sort-button:hover { color: var(--ink); background: transparent; }
+.holdings-table th[aria-sort] .sort-button { color: var(--ink); }
+.holdings-table .sort-indicator { color: var(--brand-strong); }
+
+/* Design 049 §4.2.5: an icon-only toggle, so the name keeps the column. */
+.lots-toggle {
+  flex: none;
+  justify-content: center;
+  width: 28px;
+  min-height: 28px;
+  padding: 0;
+  border-radius: 999px;
+}
+html:not(.js) .lots-toggle { display: none; }
+.holdings-table .lots-count { margin-left: 6px; }
+.js .holdings-table tbody.holding > tr:first-child { cursor: pointer; }
+
+.js .holding-detail:not(.is-open) { display: none; }
+.holdings-table .holding-detail > td { padding: 0; text-align: left; white-space: normal; border-bottom: 1px solid var(--line); }
+.holdings-table tbody.holding:last-of-type .holding-detail > td { border-bottom: 0; }
+.holdings-table tbody tr.holding-detail:hover > * { background: none; }
+
+/* Design 049 §4.2.1: summary and actions on top, a full-width lot table below. */
+.holding-detail-body {
+  display: grid;
+  gap: 12px;
+  margin: 0 var(--space-5) var(--space-4);
+  padding: 14px 16px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--surface-subtle);
+}
+
+.holding-metrics { display: flex; flex-wrap: wrap; gap: 12px 28px; margin: 0; }
+.holding-metrics dt { color: var(--muted); font-size: 12px; }
+.holding-metrics dt[title] { cursor: help; }
+.holding-metrics dd { margin: 2px 0 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.holding-detail-head { display: flex; flex-wrap: wrap; gap: 12px 32px; align-items: center; }
+.holding-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+.holding-actions .button { min-height: 36px; padding: 6px 14px; font-size: 13px; }
+.mobile-records .holding-actions { margin: 10px 0 0; }
+.holdings-table thead th[title],
+.lots-table thead th[title] { cursor: help; }
+
+.single-lot { margin: 0; color: var(--muted); font-size: 13px; }
+
+.lots-table { width: 100%; min-width: 0; }
+/* The date column hugs its content; the spare width goes to the numbers. */
+.lots-table .col-date { width: 1%; }
+.lots-table th,
+.lots-table td { padding: 6px 12px; white-space: nowrap; }
+.holdings-table .lots-table thead th { position: static; }
+.table-wrap .lots-table th:first-child { position: static; box-shadow: none; padding-left: 12px; }
+.table-wrap .lots-table tbody th:first-child { background: transparent; }
+.table-wrap .lots-table tbody tr:hover > th:first-child { background: var(--surface-hover); }
+
+.calc-notes { display: grid; gap: 6px; margin: 0; font-size: 12px; }
+.calc-notes dt { font-weight: 600; }
+.calc-notes dd { margin: 0; color: var(--muted); }
+
+/* Design 056: view and sort controls sit in the holdings heading; sorting
+   shows only with the cards, since the table sorts by its headers. */
+.holdings-heading > div:first-child { min-width: 0; }
+.holdings-heading .inline-meta { margin-top: 4px; }
+.holdings-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; margin: 0 0 0 auto; }
+.holdings-sort-controls { display: flex; align-items: center; gap: 8px; }
+.holdings-controls label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--label); white-space: nowrap; }
+.holdings-controls select { min-height: 36px; padding-block: 4px; font-size: 13px; }
+.holdings-controls button { min-height: 36px; font-size: 13px; }
+.holdings-direction-toggle { justify-content: center; width: 36px; padding: 0; font-size: 16px; }
+.holdings-display-switch { display: flex; gap: 2px; margin: 0; padding: 3px; border: 0; border-radius: var(--radius-control); background: var(--surface-input); }
+.holdings-display-switch label { position: relative; color: var(--muted); }
+.holdings-display-switch input { position: absolute; inset: 0; width: 100%; height: 100%; min-height: 0; margin: 0; opacity: 0; cursor: pointer; }
+.holdings-display-switch span { display: inline-flex; align-items: center; min-height: 30px; padding: 4px 12px; border-radius: var(--radius-small); font-size: 13px; }
+.holdings-display-switch input:checked + span { background: var(--surface-selected); color: var(--ink); font-weight: 600; }
+.holdings-display-switch input:focus-visible + span { outline: 2px solid var(--brand-strong); outline-offset: 1px; }
+.js .holdings-panel[data-holdings-display="table"] .holdings-sort-controls { display: none; }
+@media (min-width: 768px) {
+  .js .holdings-panel[data-holdings-display="auto"] .holdings-sort-controls { display: none; }
+}
+.holdings-help { margin: 0 16px 12px; padding: 8px 12px; font-size: 13px; }
+.holding-lots { padding-left: 18px; }
+.holding-lots li { padding: 6px 0; border: 0; font-size: 13px; }
+.holdings-panel[data-holdings-display="table"] > .mobile-records,
+.holdings-panel[data-holdings-display="cards"] > .holdings-table-wrap,
+.holdings-panel[data-holdings-display="cards"] > .holdings-scroll-hint { display: none; }
+.holdings-panel[data-holdings-display="cards"] > .mobile-records { display: block; }
+@media (max-width: 767px) {
+  .holdings-panel[data-holdings-display="auto"] > .holdings-table-wrap,
+  .holdings-panel[data-holdings-display="auto"] > .holdings-scroll-hint { display: none; }
+  .holdings-panel[data-holdings-display="table"] > .holdings-table-wrap { display: block; }
+  .lots-toggle { width: 44px; min-height: 44px; }
+  .holdings-controls select, .holdings-controls button { min-height: 44px; }
+  .holdings-controls select { font-size: 16px; }
+  .holdings-direction-toggle { width: 44px; }
+  .holdings-display-switch span { min-height: 38px; }
+  /* Two full-width rows: sort with its direction, then the view switch. */
+  .holdings-controls, .holdings-sort-controls, .holdings-display-switch { flex: 1 1 100%; }
+  .holdings-sort-controls label { flex: 1; min-width: 0; }
+  .holdings-sort-controls select { flex: 1; min-width: 0; }
+  .holdings-display-switch label { flex: 1; }
+  .holdings-display-switch span { justify-content: center; width: 100%; }
+}

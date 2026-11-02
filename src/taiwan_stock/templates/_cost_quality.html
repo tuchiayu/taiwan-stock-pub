@@ -1,0 +1,7 @@
+{% macro cost_quality(estimates, account_id) -%}
+{% if estimates %}
+<span class="cost-quality"><span class="badge">成本暫估</span>
+<span class="cell-note">成本、損益與回本價採用暫估成本。</span>
+{% for estimate in estimates %}<a href="/corporate-actions/{{ estimate.action_id }}/review?broker_account_id={{ account_id|urlencode }}" title="{{ estimate.note }}">查看依據{% if estimates|length > 1 %} {{ loop.index }}{% endif %}</a>{% endfor %}</span>
+{% endif %}
+{%- endmacro %}

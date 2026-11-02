@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}匯入預覽 - 台灣股市數據工具{% endblock %}
+{% macro value(field, raw) -%}
+{%- if raw is none or raw == '' -%}（空）
+{%- elif field == 'event_type' -%}{{ event_type_labels.get(raw, raw) }}
+{%- elif field == 'is_day_trade' -%}{{ '是' if raw else '否' }}
+{%- else -%}{{ raw }}{%- endif -%}
+{%- endmacro %}
+{% macro trade_cells(row) -%}
+<th scope="row" class="col-number">{{ row.row_number }}</th>
+<td class="col-date">{{ row.values.trade_date }}</td>
+<td class="col-account">{{ row.broker_account_name }}</td>
+<td class="col-name">{{ row.security_code }}</td>
+<td class="col-status">{{ event_type_labels[row.values.event_type] }}</td>
+<td class="col-number">{{ row.values.quantity|number(0) }}</td>
+<td class="col-number">{{ row.values.unit_price|number }}</td>
+{%- endmacro %}
+{% macro trade_head(extra) -%}
+<thead><tr><th class="col-number">列</th><th class="col-date">日期</th><th class="col-account">帳戶</th><th class="col-name">商品</th><th class="col-status">買賣</th><th class="col-number">股數</th><th class="col-number">單價</th>{{ extra }}</tr></thead>
+{%- endmacro %}
+{% block content %}
+{% set updates = plan.rows|selectattr('status', 'equalto', 'update')|list %}
+{% set duplicates = plan.rows|selectattr('status', 'equalto', 'duplicate')|list %}
+{% set creates = plan.rows|selectattr('status', 'equalto', 'create')|list %}
+<section class="workspace-controls" aria-label="匯入預覽"><div class="workspace-heading">
+  <h1>匯入預覽</h1>
+  <p class="subtitle">{% if filename %}{{ filename }} · {% endif %}共 {{ plan.rows|length }} 列，確認後才會寫入</p>
+</div></section>
+
+{% if notice %}<div class="notice error" role="alert">{{ notice }}（已依目前資料重新預覽）</div>{% endif %}
+
+<section class="stats" aria-label="匯入摘要">
+  <div class="stat"><div class="stat-label">新增</div><div class="amount">{{ plan.summary.created }}</div></div>
+  <div class="stat"><div class="stat-label">修改</div><div class="amount">{{ plan.summary.updated }}</div></div>
+  <div class="stat"><div class="stat-label">未變更</div><div class="amount">{{ plan.summary.unchanged }}</div><div class="stat-note">不會寫入</div></div>
+  <div class="stat"><div class="stat-label">疑似重複</div><div class="amount">{{ plan.summary.duplicates }}</div><div class="stat-note">預設不匯入</div></div>
+</section>
+
+{% if not preview_id %}
+<div class="notice" role="status">沒有需要匯入的變更：檔案中的交易都已在資料庫裡。</div>
+<p><a href="/transactions">返回交易紀錄</a></p>
+{% else %}
+<form method="post" action="/transactions/import/confirm" id="import-confirm">
+  <input type="hidden" name="preview_id" value="{{ preview_id }}">
+  <input type="hidden" name="plan_digest" value="{{ plan.digest }}">
+
+  {% if updates %}
+  <details class="panel" open>
+    <summary class="panel-heading"><h2>修改（{{ updates|length }}）</h2></summary>
+    <div class="table-wrap" tabindex="0" role="region" aria-label="修改的交易，可水平捲動">
+      <table>
+        {{ trade_head('<th class="col-notes">變更</th>'|safe) }}
+        <tbody>{% for row in updates %}<tr>{{ trade_cells(row) }}<td class="col-notes">{% for field, change in row.changes.items() %}<div>{{ field_labels.get(field, field) }}：{{ value(field, change[0]) }} → <strong>{{ value(field, change[1]) }}</strong></div>{% endfor %}</td></tr>{% endfor %}</tbody>
+      </table>
+    </div>
+  </details>
+  {% endif %}
+
+  {% if duplicates %}
+  <details class="panel" open>
+    <summary class="panel-heading"><h2>疑似重複（{{ duplicates|length }}）</h2><small>跟既有交易完全相同、但沒有 trade_id；同一天確實有兩筆相同的交易時才需要勾選</small></summary>
+    <div class="table-wrap" tabindex="0" role="region" aria-label="疑似重複的交易，可水平捲動">
+      <table>
+        {{ trade_head('<th class="col-actions">仍要匯入</th>'|safe) }}
+        <tbody>{% for row in duplicates %}<tr>{{ trade_cells(row) }}<td class="col-actions"><label><input type="checkbox" name="include_rows" value="{{ row.row_number }}"> 匯入第 {{ row.row_number }} 列</label></td></tr>{% endfor %}</tbody>
+      </table>
+    </div>
+  </details>
+  {% endif %}
+
+  {% if creates %}
+  <details class="panel"{% if creates|length <= 10 %} open{% endif %}>
+    <summary class="panel-heading"><h2>新增（{{ creates|length }}）</h2></summary>
+    <div class="table-wrap" tabindex="0" role="region" aria-label="新增的交易，可水平捲動">
+      <table>
+        {{ trade_head('') }}
+        <tbody>{% for row in creates %}<tr>{{ trade_cells(row) }}</tr>{% endfor %}</tbody>
+      </table>
+    </div>
+  </details>
+  {% endif %}
+
+  <p class="subtitle">確認後會先自動備份資料庫再寫入；CSV 不會刪除交易，檔案中沒有出現的交易維持原樣。</p>
+</form>
+<div class="actions">
+  <button type="submit" form="import-confirm">確認匯入（新增 {{ creates|length }}、修改 {{ updates|length }}）</button>
+  <form method="post" action="/transactions/import/cancel" class="inline-form">
+    <input type="hidden" name="preview_id" value="{{ preview_id }}">
+    <button type="submit" class="secondary">取消</button>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

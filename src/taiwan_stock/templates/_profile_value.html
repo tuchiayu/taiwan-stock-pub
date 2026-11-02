@@ -1,0 +1,17 @@
+{# Design 048 §4.2.5: `compact` (tables) labels only what is not official;
+   the month line keeps 暫定 and the tooltip still names every source. #}
+{% macro profile_value(display, value, months=none, stack_source=false, compact=false, source_note=none) -%}
+{% set show_tier = display.value and not (compact and display.tier == 'official') %}
+{% set month_label = '官方' if display.month_tier == 'official' else '同基金' if display.month_tier == 'share_class' else '暫定' if display.month_tier == 'provisional' else '歷史' %}
+<span class="profile-entry">
+  <span class="profile-line">
+    <span class="profile-value{% if not display.value %} tier-unknown{% endif %}">{{ value }}</span>
+    {% if show_tier and not stack_source %}<span class="profile-source tier-{{ display.tier }}" title="{{ ('同一基金的新台幣主級別 ' ~ display.from_code ~ ' 官方資料') if display.tier == 'share_class' else {'official': '官方公告資料', 'inferred': '依歷史配息紀錄判斷，非官方確認', 'user_override': '使用者自訂，非官方確認'}[display.tier] }}{% if source_note %}；{{ source_note }}{% endif %}">{{ tier_labels[display.tier] }}</span>{% endif %}
+  </span>
+  {% if show_tier and stack_source %}<span class="profile-line"><span class="profile-source tier-{{ display.tier }}" title="{{ ('同一基金的新台幣主級別 ' ~ display.from_code ~ ' 官方資料') if display.tier == 'share_class' else {'official': '官方公告資料', 'inferred': '依歷史配息紀錄判斷，非官方確認', 'user_override': '使用者自訂，非官方確認'}[display.tier] }}">{{ tier_labels[display.tier] }}</span></span>{% endif %}
+  {% if months %}<span class="profile-line profile-month-line">
+    <span class="profile-months" title="{{ '官方公告的除息月份' if display.month_tier == 'official' else ('同一基金的新台幣主級別 ' ~ display.from_code ~ ' 官方除息月份') if display.month_tier == 'share_class' else '只依最近一次除息月份暫定，下次配息後確認' if display.month_tier == 'provisional' else '依近期除息紀錄推定，非官方公告，未來月份可能調整' }}" aria-label="{{ '官方公告除息月份' if display.month_tier == 'official' else '同基金除息月份' if display.month_tier == 'share_class' else '暫定除息月份' if display.month_tier == 'provisional' else '歷史除息月份' }}：{{ months|join('、') }} 月">{% if not compact or display.month_tier == 'provisional' %}{{ month_label }}：{% endif %}{{ months|join('、') }} 月</span>
+  </span>{% endif %}
+  {% if display.record_mismatch %}<span class="profile-line"><small class="cell-note" title="官方頻率與實際配息次數不一致，可能是官方資料未更新或配息政策改變">官方與紀錄不符（{{ display.record_mismatch.year }} 年{{ '至今' if display.record_mismatch.to_date else '' }}配 {{ display.record_mismatch.count }} 次）</small></span>{% endif %}
+</span>
+{%- endmacro %}

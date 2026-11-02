@@ -1,0 +1,28 @@
+{% from '_fields.html' import errors, invalid, error %}
+{% macro trade_fields(values, messages, accounts=[], securities=[], editing=false, trade=none) %}
+<input type="hidden" name="enhanced" value="1">
+{{ errors(messages) }}
+<fieldset class="form-section"><legend>帳戶與商品</legend><div class="form-grid">
+{% if editing %}<input type="hidden" data-trade-account value="{{ trade.broker_account_id }}"><p>券商帳戶：{{ trade.broker_account_name }}</p><p>商品：{{ trade.security_code }} {{ trade.security_name }}</p><input type="hidden" data-trade-security-code value="{{ trade.market }}:{{ trade.security_code }}" list="securities-list"><datalist id="securities-list"><option value="{{ trade.market }}:{{ trade.security_code }}" data-security-id="{{ trade.security_id }}" data-code="{{ trade.security_code }}" data-status="active" data-security-type="{{ trade.security_type }}">{{ trade.security_name }}</option></datalist>
+{% else %}
+<label for="trade-broker_account_id">券商帳戶<select id="trade-broker_account_id" name="broker_account_id" data-trade-account required{{ invalid('broker_account_id', messages) }}><option value="">請選擇帳戶</option>{% for a in accounts %}<option value="{{ a.id }}"{% if values.get('broker_account_id') == a.id|string %} selected{% endif %}>{{ a.name }}</option>{% endfor %}</select>{{ error('broker_account_id', messages) }}</label>
+<label for="trade-security_code">商品代碼<input id="trade-security_code" name="security_code" list="securities-list" placeholder="例如 0050、2330" value="{{ values.get('security_code') or '' }}" required data-trade-security-code{{ invalid('security_code', messages) }}>{{ error('security_code', messages) }}</label>
+<datalist id="securities-list">{% for s in securities %}<option value="{{ s.market }}:{{ s.code }}" data-security-id="{{ s.id }}" data-code="{{ s.code }}" data-status="{{ s.status }}" data-security-type="{{ s.security_type }}">{{ s.name }}</option>{% endfor %}</datalist>
+{% endif %}
+</div></fieldset>
+<fieldset class="form-section"><legend>交易內容</legend><div class="form-grid">
+<label for="trade-event_type">交易類型<select id="trade-event_type" name="event_type" required data-trade-event-type{{ invalid('event_type', messages) }}>{% for key,label in [('buy','買進'),('sell','賣出'),('opening','期初持股')] %}<option value="{{ key }}"{% if values.get('event_type') == key %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>{{ error('event_type', messages) }}</label>
+<label for="trade-trade_date"><span data-trade-date-label>交易／取得日期</span><input id="trade-trade_date" type="date" data-trade-date name="trade_date" value="{{ values.get('trade_date') or '' }}" required{{ invalid('trade_date', messages) }}>{{ error('trade_date', messages) }}</label>
+<label for="trade-quantity">股數（股）<input id="trade-quantity" name="quantity" type="number" inputmode="numeric" min="1" step="1" value="{{ values.get('quantity') if values.get('quantity') is not none else '' }}" required data-trade-quantity{{ invalid('quantity', messages) }}>{{ error('quantity', messages) }}</label>
+<label for="trade-unit_price" data-trade-price-field>每股成交價（元）<input id="trade-unit_price" name="unit_price" inputmode="decimal" value="{{ values.get('unit_price') if values.get('unit_price') is not none else '' }}" data-trade-unit-price{{ invalid('unit_price', messages) }}>{{ error('unit_price', messages) }}</label>
+<label for="trade-executed_amount"><span data-trade-amount-label>成交金額／期初總成本（元）</span><input id="trade-executed_amount" name="executed_amount" inputmode="decimal" value="{{ values.get('executed_amount') if values.get('executed_amount') is not none else '' }}" data-trade-executed-amount{{ invalid('executed_amount', messages) }}><small>填成交價時自動計算金額；期初持股可只填總成本，未知可留空。</small>{{ error('executed_amount', messages) }}</label>
+</div></fieldset>
+<details class="form-section" data-trade-fees{% if editing or messages.get('commission') or messages.get('transaction_tax') or messages.get('other_fees') %} open{% endif %}><summary>費用與覆寫設定</summary><p class="inline-meta">費用留空時由系統試算。填入實際費用可覆寫；清空欄位或按「恢復自動」即可重新試算。</p><div class="form-grid">
+{% for key,label,attr in [('commission','手續費（元）','data-trade-commission'),('transaction_tax','證交稅（元，僅賣出）','data-trade-transaction-tax'),('other_fees','其他費用（元）','data-trade-other-fees')] %}
+<label for="trade-{{ key }}"{% if key == 'transaction_tax' %} data-trade-tax-field{% endif %}>{{ label }}<input id="trade-{{ key }}" name="{{ key }}" inputmode="decimal" value="{{ values.get(key) if values.get(key) is not none else '' }}" {{ attr }}{{ invalid(key, messages) }}><small data-fee-status="{{ key }}"></small>{{ error(key, messages) }}</label>
+{% endfor %}
+<label class="checkbox-field" data-trade-day-trade-field><input type="checkbox" name="is_day_trade" value="1"{% if values.get('is_day_trade') %} checked{% endif %} data-trade-day-trade-checkbox> 是否為當沖（僅賣出股票適用）</label>
+</div><button type="button" class="secondary" data-reset-fees hidden>恢復自動費用</button></details>
+<label for="trade-note">備註<input id="trade-note" name="note" value="{{ values.get('note') or '' }}"></label>
+<output class="trade-preview" data-trade-preview aria-live="polite">儲存時由系統計算適用費用；啟用 JavaScript 可即時預覽。</output>
+{% endmacro %}

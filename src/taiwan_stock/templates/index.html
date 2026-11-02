@@ -1,0 +1,258 @@
+{% extends "base.html" %}
+{% from "_cost_quality.html" import cost_quality %}
+{% from "_actions.html" import sync_button, create_link with context %}
+{% block head %}
+<script>document.documentElement.classList.add("js");</script>
+<link rel="stylesheet" href="/static/holdings.css?v=12">
+<script src="/static/holdings-table.js?v=6" defer></script>
+{% endblock %}
+{% macro signed(value, suffix="") -%}
+  {%- if value is none -%}—
+  {%- elif value|float > 0 -%}<span class="gain">+{{ value|number(2 if suffix == "%" else 0, suffix == "%") }}{{ suffix }}</span>
+  {%- elif value|float < 0 -%}<span class="loss">−{{ (value|float|abs)|number(2 if suffix == "%" else 0, suffix == "%") }}{{ suffix }}</span>
+  {%- else -%}<span>{{ value|number(2 if suffix == "%" else 0, suffix == "%") }}{{ suffix }}</span>
+  {%- endif -%}
+{%- endmacro %}
+{% block content %}
+<section class="workspace-controls" aria-label="持股操作"><div class="workspace-heading">
+  <div>
+    <h1>我的持股</h1>
+  </div>
+  <div class="actions page-actions" role="group" aria-label="頁面操作">
+    <form method="post" action="/prices/sync" data-sync-operation="prices" class="inline-form sync-form"><input type="hidden" name="request_key" value="{{ sync_keys['prices'] }}">{{ sync_button('prices', '同步最新股價') }}</form>
+    {{ create_link('/transactions?new=1#new-trade', '新增交易') }}
+  <details class="workspace-tools"><summary class="button secondary">計算說明</summary><div class="workspace-tools-body"><h3>怎麼算？</h3><dl class="calc-notes"><div><dt>回本價</dt><dd>全部賣出、含手續費與證交稅的損益兩平價</dd></div><div><dt>扣息回本價</dt><dd>回本價再扣除已入帳的配息</dd></div><div><dt>未實現損益</dt><dd>市值 − 持有成本（含買進費用，未扣賣出費用）</dd></div><div><dt>成本殖利率</dt><dd>目前股數 × 近 12 個月配息 ÷ 持有成本</dd></div><div><dt>實際領息殖利率</dt><dd>近 12 個月實際領到的配息 ÷ 平均持有成本</dd></div></dl></div></details>
+
+  </div>
+</div>
+</section>
+
+{% if prices_synced is not none %}
+<div class="notice success">
+  <span aria-hidden="true">✓</span>
+  <div>{% if price_sync_summary %}已同步股價：{{ price_sync_summary }}{% else %}已同步 TWSE／TPEx 最新股價（共 {{ prices_synced }} 筆）。{% endif %}</div>
+</div>
+{% endif %}
+
+{% if sync_error %}
+<div class="notice error">
+  <span aria-hidden="true">×</span>
+  <div>股價同步失敗：{{ sync_error }}</div>
+</div>
+{% endif %}
+
+{% if data_error %}
+<div class="notice error">
+  <span aria-hidden="true">×</span>
+  <div>{{ data_error }}</div>
+</div>
+{% endif %}
+{% include "_history_warnings.html" %}
+{% for holding in positions %}{% for warning in holding.pricing_warnings %}<p class="notice">{{ holding.security_code }}：{{ warning }}</p>{% endfor %}{% endfor %}
+
+{% if unhandled_actions|length > 0 %}
+<details class="notice action-warning">
+  <summary>有未處理的股票異動（{{ unhandled_actions|length }} 筆），請人工確認</summary>
+  <ul>{% for action in unhandled_actions %}<li>{{ action.security_code }} {{ action.security_name }}（{{ action.broker_account_name }}）：{{ action_type_labels[action.action_type] }}，生效日 {{ action.ex_date }}{% if action.note %} — {{ action.note }}{% endif %} · <a href="/corporate-actions/{{ action.id }}/review?broker_account_id={{ action.broker_account_id|urlencode }}">{{ '資料已變更，重新確認' if action.review_state == 'stale' else '人工確認' }}</a></li>{% endfor %}</ul>
+  <a href="/corporate-actions">前往股票異動</a>
+</details>
+{% endif %}
+
+{% if positions|length == 0 %}
+{% if history_warnings %}<p class="empty">現有部位需核對交易，目前沒有可完整計算的持股。</p>{% else %}<p class="empty">還沒有持股紀錄。<a href="/transactions">新增交易</a></p>{% endif %}
+{% else %}
+{% set quote_date = portfolio_summary.latest_quote_date %}
+{% if portfolio_summary.contains_estimated_cost %}<p class="notice" role="status">持股摘要含暫估成本；相關成本、損益與報酬率採用暫估值。</p>{% endif %}
+<section class="stats holdings-stats workspace-data" aria-label="持股摘要">
+  <article class="stat primary accent">
+    <h2 class="stat-label">{{ "已知市值小計" if history_warnings else "總市值" }}</h2>
+    <p class="amount">
+      {% if portfolio_summary.total_market_value is not none %}
+        <span class="currency">NT$</span>{{ portfolio_summary.total_market_value|number(0) }}
+      {% else %}—{% endif %}
+    </p>
+    {% if portfolio_summary.missing_price_count > 0 %}
+    <p class="stat-note">{{ portfolio_summary.missing_price_count }} 檔缺行情</p>
+    {% endif %}
+  </article>
+  <article class="stat primary">
+    <h2 class="stat-label">未實現損益</h2>
+    <p class="amount">{{ signed(portfolio_summary.total_unrealized_pnl) }}</p>
+    {% if portfolio_summary.total_unrealized_pnl_pct is not none %}
+    <p class="stat-note numeric">報酬率 {{ signed(portfolio_summary.total_unrealized_pnl_pct, "%") }}</p>
+    {% endif %}
+    {% if portfolio_summary.total_unrealized_pnl is not none and portfolio_summary.unrealized_missing_count > 0 %}
+    <p class="stat-note">{{ portfolio_summary.unrealized_missing_count }} 檔未計入</p>
+    {% endif %}
+  </article>
+  <article class="stat">
+    <h2 class="stat-label">持有成本</h2>
+    <p class="amount">
+      {% if portfolio_summary.total_cost is not none %}
+        <span class="currency">NT$</span>{{ portfolio_summary.total_cost|number(0) }}
+      {% else %}—{% endif %}
+    </p>
+    {% if portfolio_summary.missing_cost_count > 0 %}
+    <p class="stat-note">{{ portfolio_summary.missing_cost_count }} 檔成本未知</p>
+    {% endif %}
+  </article>
+  <article class="stat">
+    <h2 class="stat-label">當日損益{% if quote_date and portfolio_summary.stale_quote_count == 0 %}（{{ quote_date[5:7] }}/{{ quote_date[8:10] }}）{% endif %}</h2>
+    <p class="amount">{{ signed(portfolio_summary.total_daily_pnl) }}</p>
+    {% if portfolio_summary.stale_quote_count > 0 %}
+    <p class="stat-note">各檔行情日不同</p>
+    {% endif %}
+    {% if portfolio_summary.daily_pnl_unknown_count > 0 %}
+    <p class="stat-note">{{ portfolio_summary.daily_pnl_unknown_count }} 檔交易金額未知</p>
+    {% endif %}
+  </article>
+</section>
+
+<section class="panel holdings-panel workspace-data" aria-labelledby="holdings-title" data-holdings-display="{{ holding_state.display }}">
+  <div class="panel-heading workspace-data-heading holdings-heading">
+    <div>
+      <h2 id="holdings-title">持股明細</h2>
+      <p class="inline-meta">{% if portfolio_summary.latest_quote_date %}最新行情日：{{ portfolio_summary.latest_quote_date }}{% if portfolio_summary.stale_quote_count > 0 %}（{{ portfolio_summary.stale_quote_count }} 檔較舊，最早 {{ portfolio_summary.earliest_quote_date }}）{% endif %} · {% endif %}金額新臺幣元／數量股</p>
+    </div>
+    {# Design 056: sort controls show only with the cards; the table sorts by its headers. #}
+    <form method="get" action="/" id="holdings-controls" class="holdings-controls">
+      <span class="holdings-sort-controls">
+        <label>排序<select name="sort" data-holdings-sort>{% for key,label in holding_state.labels.items() %}<option value="{{ key }}"{% if holding_state.sort == key %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+        <label data-holdings-direction-field>方向<select name="direction" data-holdings-direction><option value="descending"{% if holding_state.direction == 'descending' %} selected{% endif %}>由大到小</option><option value="ascending"{% if holding_state.direction == 'ascending' %} selected{% endif %}>由小到大</option></select></label>
+        <button type="button" class="secondary holdings-direction-toggle" data-holdings-direction-toggle hidden></button>
+      </span>
+      <fieldset class="holdings-display-switch" data-holdings-display-picker><legend class="holdings-sr-only">呈現方式</legend>{% for key,label in [('auto','自動'),('cards','卡片'),('table','表格')] %}<label{% if key == 'auto' %} title="窄螢幕顯示卡片，寬螢幕顯示表格"{% endif %}><input type="radio" name="display" value="{{ key }}"{% if holding_state.display == key %} checked{% endif %}><span>{{ label }}</span></label>{% endfor %}</fieldset>
+      <button type="submit" class="secondary" data-holdings-apply>套用</button>
+    </form>
+  </div>
+  <ul class="mobile-records" aria-label="持股重點摘要">
+    {% for row in positions %}<li data-holding-index="{{ loop.index }}">
+      <div class="mobile-record-head"><strong><a href="/securities/{{ row.security_id }}">{{ row.security_code }} {{ row.security_name }}</a></strong><span>{{ row.broker_account_name }}</span></div>
+      {{ cost_quality(row.cost_estimates, row.broker_account_id) }}
+      <div class="mobile-record-metrics"><span>市值 {{ row.market_value|number(0) }}</span><strong>損益 {{ signed(row.unrealized_pnl) }}</strong></div>
+      <p class="inline-meta">報酬率 {{ signed(row.unrealized_pnl_pct, '%') }} · {{ row.position.remaining_quantity|number(0) }} 股{% if row.close_date %} · 行情 {{ row.close_date }}{% endif %}</p>
+      <details><summary>價格、成本與領息資料</summary>
+        <dl><div><dt>收盤價</dt><dd>{{ row.latest_close|number(2, true) }}</dd></div><div><dt>均價</dt><dd>{{ row.average_cost|number(2, true) }}</dd></div><div><dt>持有成本</dt><dd>{{ row.position.remaining_cost|number(0) if row.position.remaining_cost is not none else '成本未知' }}</dd></div><div><dt>當日損益</dt><dd>{{ signed(row.daily_pnl) }}</dd></div><div><dt>成本殖利率</dt><dd>{{ (row.cost_yield|number(2, true)) ~ '%' if row.cost_yield is not none else '—' }}{% if row.cost_yield_label %}<small class="cell-note">{{ row.cost_yield_label }}</small>{% endif %}</dd></div><div><dt>實際領息殖利率</dt><dd>{{ row.received_yield ~ '%' if row.received_yield is not none else '—' }}{% if row.received_yield_label %}<small class="cell-note">{{ row.received_yield_label }}</small>{% endif %}</dd></div><div><dt>回本價</dt><dd>{{ row.breakeven_price|number(2, true) }}</dd></div></dl>
+        <p>扣息回本價 {{ row.income_breakeven|number(2, true) }}</p>
+        <ul class="holding-lots">{% for lot in row.lot_breakevens %}<li>取得日 {{ lot.trade_date }} · {{ lot.adjusted_quantity|number(None) }} 股 · 成交價 {{ lot.trade_price|number(2, true) }} · 成本 {{ lot.cost|number(0) }} · 市值 {{ lot.market_value|number(0) }} · 損益 {{ signed(lot.unrealized_pnl) }}（{{ signed(lot.unrealized_pnl_pct, '%') }}） · 該筆回本價 {{ lot.breakeven_price|number(2, true) }}</li>{% endfor %}</ul>
+        <div class="holding-actions">
+          <a class="button secondary" href="/transactions?new=1&amp;security_code={{ row.security_code }}&amp;new_account_id={{ row.broker_account_id }}&amp;return_to={{ (request.url.path ~ ('?' ~ request.url.query if request.url.query else ''))|urlencode }}">新增交易</a>
+          <a class="button secondary" href="/sale-simulation?broker_account_id={{ row.broker_account_id }}&security_id={{ row.security_id }}">賣出試算</a>
+        </div>
+      </details>
+    </li>{% endfor %}
+  </ul>
+  <p class="scroll-hint holdings-scroll-hint" id="scroll-help">左右捲動查看完整欄位。</p>
+  <div class="table-wrap holdings-table-wrap" tabindex="0" role="region" aria-label="持股明細，可水平捲動" aria-describedby="scroll-help">
+    <table class="holdings-table" data-holdings-table>
+      <thead>
+        <tr>
+          <th data-sort-key="account"{% if holding_state.sort == 'account' %} aria-sort="{{ holding_state.direction }}"{% endif %} data-sort-type="text" class="col-account">帳戶</th>
+          <th class="col-name text-left" data-sort-key="security"{% if holding_state.sort == 'security' %} aria-sort="{{ holding_state.direction }}"{% endif %} data-sort-type="text">商品</th>
+          <th data-sort-key="quantity"{% if holding_state.sort == 'quantity' %} aria-sort="{{ holding_state.direction }}"{% endif %} data-sort-type="number" class="col-number">股數</th>
+          <th data-sort-key="average_cost"{% if holding_state.sort == 'average_cost' %} aria-sort="{{ holding_state.direction }}"{% endif %} data-sort-type="number" class="col-number">均價</th>
+          <th data-sort-key="close"{% if holding_state.sort == 'close' %} aria-sort="{{ holding_state.direction }}"{% endif %} data-sort-type="number" class="col-number">收盤價</th>
+          <th data-sort-key="market_value"{% if holding_state.sort == 'market_value' %} aria-sort="{{ holding_state.direction }}"{% endif %} data-sort-type="number" class="col-number">市值</th>
+          <th data-sort-key="weight"{% if holding_state.sort == 'weight' %} aria-sort="{{ holding_state.direction }}"{% endif %} data-sort-type="number" class="col-number">佔比</th>
+          <th data-sort-key="unrealized_pnl"{% if holding_state.sort == 'unrealized_pnl' %} aria-sort="{{ holding_state.direction }}"{% endif %} data-sort-type="number" title="市值 − 持有成本；未扣賣出費用" class="col-number">未實現損益</th>
+          <th data-sort-key="return_pct"{% if holding_state.sort == 'return_pct' %} aria-sort="{{ holding_state.direction }}"{% endif %} data-sort-type="number" class="col-number">報酬率</th>
+          <th data-sort-key="daily_pnl"{% if holding_state.sort == 'daily_pnl' %} aria-sort="{{ holding_state.direction }}"{% endif %} data-sort-type="number" class="col-number">當日損益</th>
+          <th data-sort-key="cost_yield"{% if holding_state.sort == 'cost_yield' %} aria-sort="{{ holding_state.direction }}"{% endif %} data-sort-type="number" title="目前股數 × 近 12 個月每股配息 ÷ 持有成本；近期才買進會偏高" class="col-number">成本殖利率</th>
+          <th data-sort-key="received_yield"{% if holding_state.sort == 'received_yield' %} aria-sort="{{ holding_state.direction }}"{% endif %} data-sort-type="number" title="近 12 個月實際領到的配息 ÷ 平均持有成本" class="col-number">實際領息殖利率</th>
+        </tr>
+      </thead>
+      {% for row in positions %}
+      {% set detail_id = "holding-detail-" ~ loop.index %}
+      {% set lots = row.lot_breakevens %}
+      <tbody class="holding" data-holding-index="{{ loop.index }}">
+        <tr>
+          <th scope="row" data-sort="{{ row.broker_account_name }}" class="col-account">{{ row.broker_account_name }}</th>
+          <td class="col-name text-left" data-sort="{{ row.security_code }}">
+            <div class="holding-name">
+              <button type="button" class="lots-toggle secondary" aria-expanded="false" aria-controls="{{ detail_id }}" aria-label="持有明細 {{ lots|length }} 筆">
+                <span class="toggle-icon" aria-hidden="true"></span>
+              </button>
+              <span><a href="/securities/{{ row.security_id }}">{{ row.security_code }} {{ row.security_name }}</a><span class="cell-note lots-count">{{ lots|length }} 筆</span></span>
+              {{ cost_quality(row.cost_estimates, row.broker_account_id) }}
+            </div>
+          </td>
+          <td data-sort="{{ row.position.remaining_quantity }}" class="col-number">{{ row.position.remaining_quantity|number(0) }}</td>
+          <td{% if row.average_cost is not none %} data-sort="{{ row.average_cost }}"{% endif %} class="col-number">{{ row.average_cost|number(2, true) }}</td>
+          <td{% if row.latest_close is not none %} data-sort="{{ row.latest_close }}"{% endif %} class="col-number">{{ row.latest_close|number(2, true) }}{% if row.close_date and row.close_date < quote_date %}<span class="cell-note stale-date" title="行情日 {{ row.close_date }}，尚未更新至 {{ quote_date }}">{{ row.close_date[5:7] }}/{{ row.close_date[8:10] }}</span>{% endif %}</td>
+          <td{% if row.market_value is not none %} data-sort="{{ row.market_value }}"{% endif %} class="col-number">{{ row.market_value|number(0) }}</td>
+          <td{% if row.weight_pct is not none %} data-sort="{{ row.weight_pct }}"{% endif %} class="col-number">{% if row.weight_pct is not none %}{{ row.weight_pct }}%{% else %}—{% endif %}</td>
+          <td{% if row.unrealized_pnl is not none %} data-sort="{{ row.unrealized_pnl }}"{% endif %} class="col-number">{{ signed(row.unrealized_pnl) }}</td>
+          <td{% if row.unrealized_pnl_pct is not none %} data-sort="{{ row.unrealized_pnl_pct }}"{% endif %} class="col-number">{{ signed(row.unrealized_pnl_pct, "%") }}</td>
+          <td{% if row.daily_pnl is not none %} data-sort="{{ row.daily_pnl }}"{% endif %} class="col-number">{{ signed(row.daily_pnl) }}</td>
+          <td{% if row.cost_yield is not none %} data-sort="{{ row.cost_yield }}"{% endif %} class="col-number">{% if row.cost_yield is not none %}{{ row.cost_yield }}%{% else %}—{% endif %}{% if row.cost_yield_label %}<small class="cell-note">{{ row.cost_yield_label }}</small>{% endif %}</td>
+          <td{% if row.received_yield is not none %} data-sort="{{ row.received_yield }}"{% endif %} class="col-number">{% if row.received_yield is not none %}{{ row.received_yield }}%{% else %}—{% endif %}{% if row.received_yield_label %}<small class="cell-note">{{ row.received_yield_label }}</small>{% endif %}</td>
+        </tr>
+        <tr class="holding-detail" id="{{ detail_id }}">
+          <td colspan="12">
+            <div class="holding-detail-body">
+              <div class="holding-detail-head">
+                <dl class="holding-metrics">
+                  <div>
+                    <dt>持有成本</dt>
+                    <dd>{{ row.position.remaining_cost|number(0) if row.position.remaining_cost is not none else '成本未知' }}</dd>
+                  </div>
+                  <div>
+                    <dt title="全部賣出、含手續費與證交稅的損益兩平價">回本價</dt>
+                    <dd>{{ row.breakeven_price|number(2, true) }}</dd>
+                  </div>
+                  <div>
+                    <dt title="回本價再扣除已入帳的配息">扣息回本價</dt>
+                    <dd>{{ row.income_breakeven|number(2, true) }}</dd>
+                  </div>
+                </dl>
+                <div class="holding-actions">
+                  <a class="button secondary" href="/transactions?new=1&amp;security_code={{ row.security_code }}&amp;new_account_id={{ row.broker_account_id }}&amp;return_to={{ (request.url.path ~ ('?' ~ request.url.query if request.url.query else ''))|urlencode }}">新增交易</a>
+                  <a class="button secondary" href="/sale-simulation?broker_account_id={{ row.broker_account_id }}&security_id={{ row.security_id }}">賣出試算</a>
+                </div>
+              </div>
+              {% if lots|length > 1 %}
+              <table class="lots-table">
+                <caption class="holdings-sr-only">持有明細</caption>
+                <thead>
+                  <tr>
+                    <th class="col-date" title="依先進先出排列，賣出時由上往下扣除">取得日</th>
+                    <th class="col-number">持有天數</th>
+                    <th class="col-number">股數</th>
+                    <th class="col-number">成交價</th>
+                    <th class="col-number">成本</th>
+                    <th class="col-number">市值</th>
+                    <th class="col-number" title="各筆加總可能與主列差幾元（四捨五入）">未實現損益</th>
+                    <th class="col-number">報酬率</th>
+                    <th class="col-number">該筆回本價</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for lot in lots %}
+                  <tr>
+                    <th scope="row" class="col-date">{{ lot.trade_date }}</th>
+                    <td class="col-number">{{ lot.holding_days|number(0) }} 天</td>
+                    <td class="col-number">{{ lot.adjusted_quantity|number(None) }}{% if lot.adjusted_quantity != lot.original_quantity %}<span class="cell-note">原 {{ lot.original_quantity }}</span>{% endif %}</td>
+                    <td class="col-number">{{ lot.trade_price|number(2, true) }}</td>
+                    <td class="col-number">{{ lot.cost|number(0) if lot.cost is not none else '成本未知' }}</td>
+                    <td class="col-number">{{ lot.market_value|number(0) }}</td>
+                    <td class="col-number">{{ signed(lot.unrealized_pnl) }}</td>
+                    <td class="col-number">{{ signed(lot.unrealized_pnl_pct, "%") }}</td>
+                    <td class="col-number">{{ lot.breakeven_price|number(2, true) }}</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+              {% elif lots|length == 1 %}
+              {% set lot = lots[0] %}
+              <p class="single-lot">取得日 {{ lot.trade_date }}（{{ lot.holding_days|number(0) }} 天）{% if lot.trade_price %}，成交價 {{ lot.trade_price|number(2, true) }}{% endif %}{% if lot.adjusted_quantity != lot.original_quantity %}，股數 {{ lot.adjusted_quantity }}（原 {{ lot.original_quantity }}）{% endif %}</p>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+      </tbody>
+      {% endfor %}
+    </table>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

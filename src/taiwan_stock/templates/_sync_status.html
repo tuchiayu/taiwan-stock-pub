@@ -1,0 +1,11 @@
+<section id="sync-status" aria-label="同步進度" {% if not sync_snapshot.jobs and not selected_job and not sync_snapshot.legacy_sources %}hidden{% endif %}>
+  <div data-sync-messages role="status" aria-live="polite">
+    {% for task in sync_snapshot.jobs %}<p><a href="/sync-jobs/{{ task.id }}">{{ task.phase }}</a>：執行中，自 {{ (task.started_at or task.submitted_at)|taipei_time }} 開始</p>{% endfor %}
+    {% if selected_job and selected_job.status not in ['queued', 'running'] %}
+    <p><a href="/sync-jobs/{{ selected_job.id }}">同步結果</a>：{{ {'success':'同步完成','partial':'部分成功','failed':'同步失敗','interrupted':'同步中斷'}.get(selected_job.status, selected_job.status) }}{% if selected_job.summary %} · {{ selected_job.summary }}{% endif %}{% if selected_job.error %} · {{ selected_job.error }}{% endif %}</p>
+    {% endif %}
+    {% if sync_snapshot.legacy_sources %}<p>舊版同步紀錄仍在執行中；確認舊程序停止後，關閉 Web 並執行 <code>taiwan-stock sync recover-legacy</code>。</p>{% endif %}
+  </div>
+  <noscript><p>執行中的任務會持續工作；請開啟任務連結或重新整理取得最新進度。</p></noscript>
+</section>
+<script type="application/json" id="sync-initial">{{ {'snapshot': sync_snapshot, 'selected': selected_job} | tojson }}</script>

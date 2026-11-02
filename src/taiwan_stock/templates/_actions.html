@@ -1,0 +1,26 @@
+{% macro action_icon(kind) -%}
+<svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+  {% if kind == 'sync' %}<path d="M20 7v5h-5M4 17v-5h5M6.1 7a7 7 0 0 1 11.6-1L20 9M4 15l2.3 3A7 7 0 0 0 17.9 17" />{% else %}<path d="M12 5v14M5 12h14" />{% endif %}
+</svg>
+{%- endmacro %}
+
+{% macro create_label(label) -%}
+{{ action_icon('create') }}<span>{{ label }}</span>
+{%- endmacro %}
+
+{% macro create_link(href, label) -%}
+<a href="{{ href }}" class="button action-button action-create">{{ create_label(label) }}</a>
+{%- endmacro %}
+
+{% macro sync_button(operation, label, title='', help_id='') -%}
+{% set own = sync_snapshot.jobs | selectattr('operation', 'equalto', operation) | first %}
+{% set blocked = operation in sync_snapshot.blocked_operations %}
+{#- The tooltip lives on the wrapper so it still shows while the button is disabled. #}
+{% set tooltip = '其他同步正在執行，完成後即可同步' if blocked and not own else title %}
+<span class="sync-control" data-sync-control data-sync-title="{{ title }}"{% if tooltip %} title="{{ tooltip }}"{% endif %}>
+<button type="submit" class="secondary action-button action-sync" data-sync-label="{{ label }}" aria-describedby="sync-hint-{{ operation }}{% if help_id %} {{ help_id }}{% endif %}"{% if blocked %} disabled{% endif %}>
+  {{ action_icon('sync') }}<span data-sync-label-text>{% if own %}{{ '準備同步…' if own.status == 'queued' else '同步中…' }}{% elif blocked %}其他同步中…{% else %}{{ label }}{% endif %}</span>
+</button>
+</span>
+<span class="sr-only" id="sync-hint-{{ operation }}" data-sync-hint{% if not blocked %} hidden{% endif %}>{% if own %}進度與結果見上方同步進度。{% elif blocked %}其他同步正在執行，請查看上方同步進度。{% endif %}</span>
+{%- endmacro %}

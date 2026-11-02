@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% from "_cost_quality.html" import cost_quality %}
+{% from "_pagination.html" import pagination %}
+{% block title %}人工確認股票異動 - 台灣股市數據工具{% endblock %}
+{% block content %}
+{% for warning in pricing_warnings %}<p class="notice">{{ warning }}</p>{% endfor %}
+<div class="corporate-review">
+<section class="workspace-controls"><div class="workspace-heading">
+  <div><h1>人工確認股票異動</h1><p>{{ security.code }} {{ security.name }} · {{ account.name }}</p></div>
+  <div class="actions"><a href="/corporate-actions">返回股票異動</a><a href="/">查看我的持股</a></div>
+</div></section>
+{% if request.query_params.get('saved') == '1' and not error %}<div class="notice success" role="status">已記錄人工處理結果，股數與成本維持原值。</div>{% endif %}
+{% if error %}<div class="notice error" role="alert">{{ error }}</div>{% endif %}
+<section class="panel workspace-data workspace-key-values">
+  <h2>目前帳務</h2>
+  <p><strong>{{ state_labels[state] }}</strong> · {{ '現金減資' if action.action_type == 'cash_capital_reduction' else '其他' if action.action_type == 'other' else '自動套用異動' }} · 生效日 {{ action.ex_date }}</p>
+  <p>{{ action.note or '無異動備註' }}</p>
+  {% if state == 'stale' %}<p class="notice">已確認的歷史資料有變更，請重新核對。</p>{% endif %}
+  {{ cost_quality(cost_estimates, account.id) }}
+  <dl class="review-metrics">
+    <dt>目前股數</dt><dd>{{ position.remaining_quantity|number(0) }} 股</dd>
+    <dt>總成本（新臺幣元）</dt><dd>{{ position.remaining_cost|number(0) if position.remaining_cost is not none else '成本未知' }}</dd>
+    <dt>平均成本</dt><dd>{{ average_cost|number }}</dd>
+    <dt>損益兩平價（含賣出費稅）</dt><dd>{{ breakeven_price|number }}</dd>
+  </dl>
+  <p>成本有誤時，請先<a href="/transactions?q={{ security.code|urlencode }}&amp;broker_account_id={{ account.id|urlencode }}">檢查交易紀錄</a>，再返回確認。</p>
+</section>
+<section class="panel workspace-data">
+  <h2>記錄人工確認</h2>
+  <p>確認採用後，目前成本即作為損益與回本計算基準，保留依據並結案，不再顯示本事件的暫估提醒。歷史資料已用盡、決定沿用推算結果時，也可確認採用。</p>
+  <p>只有仍待補資料或重新計算時，才選「暫時使用估算成本」，並保留暫估提示。確認只記錄你的採用決定，不會更改股數或成本，也不代表券商核實。</p>
+  {% if problem %}<p class="notice" role="status">{{ problem }}</p>{% else %}
+  <form method="post" action="/corporate-actions/{{ action.id }}/review" class="corporate-review-form">
+    <input type="hidden" name="broker_account_id" value="{{ account.id }}">
+    <input type="hidden" name="review_token" value="{{ review_token }}">
+    <fieldset><legend>確認方式（必選）</legend>
+      {% for value in ['confirmed', 'accepted_estimate'] %}<label><input type="radio" name="decision" value="{{ value }}" required{% if form_decision == value %} checked{% endif %}>{{ decision_labels[value] }}</label>{% endfor %}
+    </fieldset>
+    <label>成本依據與備註<textarea name="note" required maxlength="2000" rows="4">{{ form_note if form_decision != 'reopened' else '' }}</textarea></label>
+    <button type="submit">儲存確認結果</button>
+  </form>{% endif %}
+  {% if can_reopen %}
+  <details><summary>重新開啟人工確認</summary><p>保留歷程並恢復待處理提醒；先前未結案的暫估標示會保留，直到確認採用成本基準或相關批次售完。</p>
+    <form method="post" action="/corporate-actions/{{ action.id }}/reopen" class="corporate-review-form">
+      <input type="hidden" name="broker_account_id" value="{{ account.id }}"><input type="hidden" name="review_token" value="{{ review_token }}">
+      <label>重新開啟原因<textarea name="note" required maxlength="2000" rows="3">{{ form_note if form_decision == 'reopened' else '' }}</textarea></label>
+      <button type="submit" class="secondary">重新開啟</button>
+    </form>
+  </details>{% endif %}
+</section>
+<section class="panel workspace-data"><h2>處理歷程</h2>
+  <ul class="review-history">{% for review in history %}<li>
+    <p><strong>{{ decision_labels[review.decision] }}</strong> · <time>{{ review.reviewed_at|taipei_time }}（台北時間）</time></p>
+    <p>採用股數 {{ review.quantity|number(0) }} 股 · 總成本 {{ review.total_cost|number(0) if review.total_cost is not none else '未知' }} 元 · 帳務基準日 {{ review.as_of_date }}</p>
+    <p class="review-note">{{ review.note }}</p>
+  </li>{% else %}<li>尚無人工確認紀錄。</li>{% endfor %}</ul>
+  {{ pagination(page, total_pages, page_link, '處理歷程分頁') }}
+</section>
+</div>
+{% endblock %}

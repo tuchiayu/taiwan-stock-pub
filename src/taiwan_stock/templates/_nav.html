@@ -1,0 +1,9 @@
+{% set path = request.url.path %}
+<nav class="nav" aria-label="主要導覽">
+  <a href="/" {% if path == "/" %}aria-current="page"{% endif %}>我的持股</a>
+  <a href="/income-calendar" {% if path.startswith("/income-calendar") %}aria-current="page"{% endif %}>領息月曆</a>
+  <a href="/transactions" {% if path.startswith("/transactions") %}aria-current="page"{% endif %}>交易紀錄</a>
+  <a href="/securities" {% if path.startswith("/securities") %}aria-current="page"{% endif %}>商品查詢</a>
+  <a href="/corporate-actions" {% if path.startswith("/corporate-actions") %}aria-current="page"{% endif %}>股票異動</a>
+  <a href="/settings" {% if path.startswith("/settings") %}aria-current="page"{% endif %}>備份與設定</a>
+</nav>

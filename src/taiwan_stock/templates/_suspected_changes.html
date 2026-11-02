@@ -1,0 +1,1 @@
+{% for item in suspected_changes %}<p class="notice error" role="status">來源可能改版：{{ source_labels.get(item.source, item.source) }}{% if item.issuer %} · {{ item.issuer }}{% endif %}最近 3 次同步都無法解析，重試通常不會改善，需要更新程式。{% if item.reason %}最近原因：{{ item.reason }}{% endif %}</p>{% endfor %}

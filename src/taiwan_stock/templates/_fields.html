@@ -1,0 +1,9 @@
+{% macro errors(messages, prefix='trade-') -%}
+{% if messages %}<div class="notice error error-summary" role="alert" tabindex="-1" data-error-summary><div><strong>請修正以下欄位</strong><ul>{% for key, message in messages.items() %}<li><a href="#{{ prefix }}{{ key }}">{{ message }}</a></li>{% endfor %}</ul></div></div>{% endif %}
+{%- endmacro %}
+{% macro invalid(key, messages, prefix='trade-') -%}
+{% if messages.get(key) %} aria-invalid="true" aria-describedby="{{ prefix }}{{ key }}-error"{% endif %}
+{%- endmacro %}
+{% macro error(key, messages, prefix='trade-') -%}
+{% if messages.get(key) %}<small class="field-error" id="{{ prefix }}{{ key }}-error">{{ messages[key] }}</small>{% endif %}
+{%- endmacro %}

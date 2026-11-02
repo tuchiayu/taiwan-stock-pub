@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% from "_actions.html" import create_label with context %}
+{% from "_fields.html" import errors, invalid, error %}
+{% block title %}備份與設定 - 台灣股市數據工具{% endblock %}
+{% block head %}<script src="/static/section-shortcuts.js?v=1" defer></script>{% endblock %}
+{% macro notice(kind, text) %}<div class="notice {{ kind }}"{% if kind == 'success' %} role="status"{% endif %}><span aria-hidden="true">{{ '✓' if kind == 'success' else '×' }}</span><div>{{ text }}</div></div>{% endmacro %}
+{% block content %}
+<section class="workspace-controls" aria-label="設定操作"><div class="workspace-heading">
+  <h1>備份與設定</h1>
+  <form method="post" action="/settings/backups" class="inline-form"><button type="submit" class="action-button action-create">建立備份</button></form>
+</div>
+</section>
+{# 設計 034：捷徑列置頂並標示目前區塊；結果訊息顯示在導回的區塊內。 #}
+<nav class="workspace-shortcuts" aria-label="設定區塊" data-section-shortcuts><a href="#backups">備份與還原</a><a href="#preferences">費用設定</a><a href="#accounts">券商帳戶</a><a href="#maintenance">進階維護</a></nav>
+{% set error_section = 'preferences' if preferences_failed else 'accounts' if editing_account else 'backups' %}
+
+<section class="panel workspace-data" id="backups">
+  <div class="panel-heading workspace-data-heading">
+    <div>
+      <h2>備份與還原</h2><p class="inline-meta">{% if backups %}最近備份：{{ backups[0].modified_at_taipei }}（台北時間）{% else %}尚無備份{% endif %}</p>
+      <p class="subtitle">共有 {{ backups|length }} 份備份。還原會以所選備份覆蓋目前資料；系統會先驗證備份，並自動保存目前狀態。匯入前與還原前的自動備份各保留最新 10 份，較舊的會自動刪除；手動備份不會被自動刪除。</p>
+    </div>
+  </div>
+  {% if created %}{{ notice('success', '已建立備份：' ~ created) }}{% endif %}
+  {% if restored %}{{ notice('success', '已還原備份：' ~ restored ~ '（還原前的狀態也自動多存了一份備份）') }}{% endif %}
+  {% if deleted %}{{ notice('success', '已刪除備份：' ~ deleted) }}{% endif %}
+  {% if settings_error and error_section == 'backups' %}{{ notice('error', settings_error) }}{% endif %}
+  <p class="scroll-hint table-scroll-hint" id="backup-table-scroll-help">左右捲動查看完整欄位。</p>
+  <div class="table-wrap" tabindex="0" role="region" aria-label="備份清單，可水平捲動" aria-describedby="backup-table-scroll-help">
+    <table class="backup-table compact-table">
+      <thead>
+        <tr>
+          <th class="col-date">建立時間（台北）</th>
+          <th class="col-status">類型</th>
+          <th class="col-text">說明</th>
+          <th class="col-number">大小</th>
+          <th class="col-actions">操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for b in backups %}
+        <tr>
+          <th scope="row" class="col-date">{{ b.modified_at_taipei }}</th>
+          <td class="col-status">{{ b.kind_label }}</td>
+          <td class="col-text">{{ b.note or '—' }}<small class="cell-note">{{ b.filename }}</small></td>
+          <td class="col-number">{{ (b.size_bytes / 1024) | round(1) }} KB</td>
+          <td class="col-actions">
+            <form method="post" action="/settings/backups/restore" class="inline-form" onsubmit="return confirm('確定還原這份備份？目前資料將被覆蓋，系統會先保存目前狀態。')">
+              <input type="hidden" name="filename" value="{{ b.filename }}" />
+              <button type="submit" class="secondary">還原這份備份</button>
+            </form>
+            <form method="post" action="/settings/backups/delete" class="inline-form" onsubmit="return confirm('確定刪除這份備份（{{ b.modified_at_taipei }} {{ b.kind_label }}）？刪除後無法復原。')">
+              <input type="hidden" name="filename" value="{{ b.filename }}" />
+              <button type="submit" class="secondary">刪除</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="5" class="empty">還沒有備份，按上面「建立備份」建立第一份</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel workspace-data" id="preferences">
+  <div class="panel-heading workspace-data-heading"><h2>費用設定</h2></div>
+  {% if saved == 'preferences' %}{{ notice('success', '已儲存費用設定。') }}{% endif %}
+  {% if settings_error and error_section == 'preferences' %}{{ notice('error', settings_error) }}{% endif %}
+  <div class="panel-body">
+    <form method="post" action="/settings/preferences" class="field-list workspace-preferences">
+      <input type="hidden" name="form_format" value="display">
+      {{ errors(field_errors if preferences_failed else {}, 'preference-') }}
+      {% for key,label,help in [('commission_rate','手續費率（%）','例如 0.1425 代表 0.1425%。'),('commission_discount','手續費折數（0～10 折）','例如 6 折輸入 6；10 折為原價。'),('min_commission','最低手續費（元）','依實際券商方案設定。'),('tax_rate_stock','股票證交稅率（%）','例如 0.3 代表 0.3%。'),('tax_rate_etf','一般應稅 ETF 證交稅率（%）','例如 0.1 代表 0.1%。符合交易日停徵規則的被動式債券 ETF 自動免稅；逐筆實際費用優先。')] %}
+      <label for="preference-{{ key }}">{{ label }}<input id="preference-{{ key }}" name="{{ key }}" inputmode="decimal" value="{{ display_preferences[key] }}" required{{ invalid(key, field_errors if preferences_failed else {}, 'preference-') }}><small>{{ help }}</small>{{ error(key, field_errors if preferences_failed else {}, 'preference-') }}</label>
+      {% endfor %}
+      {% for item in tax_exemptions %}<p class="inline-meta">{{ item.text }}</p>{% if item.notice %}<p class="notice">{{ item.notice }}</p>{% endif %}{% endfor %}
+      <button type="submit">儲存設定</button>
+    </form>
+  </div>
+</section>
+
+
+<section class="panel workspace-data" id="accounts">
+  <div class="panel-heading workspace-data-heading"><h2>券商帳戶</h2></div>
+  {% if saved == 'account' %}{{ notice('success', '已儲存券商帳戶。') }}{% endif %}
+  {% if settings_error and error_section == 'accounts' %}{{ notice('error', settings_error) }}{% endif %}
+  <div class="panel-body">
+    {% for a in accounts %}
+    {% set values = account_values if editing_account == a.id else a %}
+    {% set messages = field_errors if editing_account == a.id else {} %}
+    <form method="post" action="/settings/accounts/{{ a.id }}" class="account-form">
+      {{ errors(messages, 'account-' ~ a.id ~ '-') }}
+      <div class="form-grid">
+      {% for key,label in [('name','帳戶名稱'),('dividend_bank_name','股利入帳銀行'),('remittance_fee_note','匯費備註')] %}
+      <label for="account-{{ a.id }}-{{ key }}">{{ label }}<input id="account-{{ a.id }}-{{ key }}" name="{{ key }}" value="{{ values[key] or '' }}"{% if key == 'name' %} required{% endif %}{{ invalid(key, messages, 'account-' ~ a.id ~ '-') }}>{{ error(key, messages, 'account-' ~ a.id ~ '-') }}</label>
+      {% endfor %}
+      <label for="account-{{ a.id }}-status">使用狀態<select id="account-{{ a.id }}-status" name="status"{{ invalid('status', messages, 'account-' ~ a.id ~ '-') }}><option value="active">使用中</option><option value="disabled"{% if values.status == 'disabled' %} selected{% endif %}>停用</option></select>{{ error('status', messages, 'account-' ~ a.id ~ '-') }}</label>
+      </div><button type="submit" class="secondary">儲存帳戶</button>
+    </form>
+    {% endfor %}
+    <details class="account-create"{% if editing_account == 'new' %} open{% endif %}>
+      <summary class="button action-button action-create">{{ create_label('新增券商帳戶') }}</summary>
+      {% set messages = field_errors if editing_account == 'new' else {} %}
+      <form method="post" action="/settings/accounts/new" class="account-form">
+        {{ errors(messages, 'account-new-') }}
+        <div class="form-grid">
+        {% for key,label in [('name','帳戶名稱'),('dividend_bank_name','股利入帳銀行'),('remittance_fee_note','匯費備註')] %}<label for="account-new-{{ key }}">{{ label }}<input id="account-new-{{ key }}" name="{{ key }}" value="{{ account_values.get(key, '') if editing_account == 'new' else '' }}"{% if key == 'name' %} required{% endif %}{{ invalid(key, messages, 'account-new-') }}>{{ error(key, messages, 'account-new-') }}</label>{% endfor %}
+        <label for="account-new-status">使用狀態<select id="account-new-status" name="status"{{ invalid('status', messages, 'account-new-') }}><option value="active">使用中</option><option value="disabled"{% if account_values.get('status') == 'disabled' %} selected{% endif %}>停用</option></select>{{ error('status', messages, 'account-new-') }}</label>
+        </div><button type="submit">建立券商帳戶</button>
+      </form>
+    </details>
+  </div>
+</section>
+
+
+<section class="panel workspace-data" id="maintenance">
+  <div class="panel-heading workspace-data-heading"><h2>進階維護</h2></div>
+  {% if vacuumed %}{{ notice('success', '已回收 ' ~ vacuumed ~ ' KB 的空間') }}{% endif %}
+  {% if vacuum_error %}{{ notice('error', vacuum_error) }}{% endif %}
+  <details class="page-tools workspace-maintenance"{% if vacuumed or vacuum_error %} open{% endif %}>
+    <summary>回收資料庫空間</summary>
+    <p class="inline-meta">資料目錄：<code>{{ data_dir }}</code></p>
+    <p class="subtitle">
+      目前資料庫檔案大小：{{ (db_size_bytes / 1024) | round(1) }} KB。取消追蹤商品後，
+      <code>daily_prices</code>／<code>distributions</code>／<code>corporate_actions</code>
+      的資料列會被清除，但檔案本身不會馬上變小；VACUUM 會重寫整個檔案來回收這些空間。
+    </p>
+    <p class="subtitle">執行期間需要約與目前檔案相近的暫存磁碟空間，過程中資料庫會被鎖定，檔案越大耗時越久；同步任務可能在其他視窗或背景持續執行，請先確認所有同步已結束。</p>
+    <form method="post" action="/settings/vacuum" class="toolbar-form">
+      <button type="submit" class="secondary">立即執行 VACUUM</button>
+    </form>
+  </details>
+</section>
+
+
+<section class="panel" id="tax-review"><h2>歷史 ETF 稅額核對</h2>
+<p>以下只比較原稅額與依交易日、商品及目前費率設定算出的預設值；差異不代表原稅額錯誤，系統不會自動改寫。確認後可編輯交易或使用 CSV 預覽確認。</p>
+{% if preferences.tax_rate_etf|float == 0 %}<p class="notice">一般 ETF 稅率目前為零；請確認是否為舊版債券免稅設定，其他應稅 ETF 可能也套用了零稅率。</p>{% endif %}
+<table class="tax-review-table compact-table"><thead><tr><th class="col-text">日期／商品</th><th class="col-number">原稅額</th><th class="col-number">預設稅額</th><th class="col-number">差異</th><th class="col-actions">核對</th></tr></thead><tbody>
+{% for row in tax_differences %}<tr><td class="col-text">{{ row.trade_date }} {{ row.code }}</td><td class="col-number">{{ row.original if row.original is not none else '未知' }}</td><td class="col-number">{{ row.expected }}</td><td class="col-number">{{ row.difference if row.difference is not none else '未知' }}</td><td class="col-actions"><a href="/transactions/{{ row.trade_id }}/edit">編輯交易</a></td></tr>{% else %}<tr><td colspan="5">目前可比較的交易沒有稅額差異。</td></tr>{% endfor %}
+</tbody></table></section>
+{% endblock %}

@@ -1,0 +1,40 @@
+<section class="panel">
+  <p class="scroll-hint table-scroll-hint" id="income-table-scroll-help">左右捲動查看完整欄位。</p>
+  <div class="table-wrap" tabindex="0" role="region" aria-label="領息公告表格，可水平捲動" aria-describedby="income-table-scroll-help">
+    <table class="income-table">
+      <thead>
+        <tr>
+          <th class="col-date">發放日</th><th class="col-date">除息日</th><th class="col-bank">預計銀行</th>
+          <th class="col-status">狀態</th>
+          <th class="col-account">帳戶</th>
+          <th class="col-name">商品</th>
+          <th class="col-number">股數</th>
+          <th class="col-number">每股配息</th>
+          <th class="col-number">預計毛額</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in entries %}
+        <tr>
+          <th scope="row" class="col-date">{{e.pay_date or "發放日期待確認"}}</th>
+          <td class="col-date">{{ e.ex_dividend_date or "未公告" }}</td>
+          <td class="col-bank">{{e.bank or "未設定"}}</td>
+          <td class="col-status">
+            <span class="badge">{{ "依目前持股試算" if e.is_future else "權益已確定" }}</span>
+            {% if e.reconciliation_status == "needs_review" %}<span class="badge" title="{{ e.reconciliation_note }}">來源待覆核</span>{% endif %}
+          </td>
+          <td class="col-account">{{ e.broker_account_name }}</td>
+          <td class="col-name">{{ e.security_code }} {{ e.security_name }}</td>
+          <td class="col-number">{{ e.entitled_quantity|number(0) }}</td>
+          <td class="col-number">{{ e.amount_per_share|number(none, true) if e.amount_per_share is not none else "未知" }}</td>
+          <td class="col-number">{{ e.expected_gross|number(0) if e.expected_gross is not none else "無法計算" }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="9" class="empty">{% if scope is defined and scope.kind != "all" %}沒有符合此查看範圍的配息公告。<a href="{{ clear_filter_url }}">查看全部</a>{% else %}還沒有資料。先到<a href="/corporate-actions">股票異動</a>頁面同步除權息公告，並確認持股裡有相關商品。{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>

@@ -1,0 +1,52 @@
+# Pre-commit Hooks Configuration
+# Automatically triggers formatter/linter and secret security scanning on git commit.
+# See DEVELOPMENT.md 2.4.4 Pre-commit Hooks for detailed rules.
+#
+# Local setup:
+#   1. Install: winget install pre-commit (or another method for your OS)
+#   2. Register hook: pre-commit install
+#   3. (Optional) Scan the whole project manually: pre-commit run --all-files
+
+default_stages: [pre-commit]
+
+repos:
+  # Common checks (language-agnostic, run on every change)
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: check-added-large-files     # Block committing oversized binaries (default cap 500 KB)
+        args: ['--maxkb=1000']
+      - id: check-case-conflict         # Prevent cross-platform filename case conflicts
+      - id: check-merge-conflict        # Detect leftover Git merge conflict markers
+      - id: check-yaml                  # Validate YAML config syntax
+      - id: check-json                  # Validate JSON config syntax
+      - id: end-of-file-fixer           # Ensure all text files end with a newline (POSIX standard)
+      - id: trailing-whitespace         # Strip trailing whitespace
+      - id: detect-private-key          # Detect accidentally committed private keys
+
+  # Secret scanning (prevent leaking hardcoded credentials)
+  # This rev is the single source of truth for the detect-secrets version; CI runs
+  # pre-commit run --all-files directly and picks it up automatically, no separate sync needed.
+  # The following "manual" execution paths each pin their own version and must be checked together on update:
+  #   DEVELOPMENT.md 2.4.3's pipx run detect-secrets command
+  #   Any language handbook that pins detect-secrets in its own dev dependency file
+  #   (for example Python's requirements-dev.txt); stacks without such a file use the
+  #   shared pipx command above and need no separate pin
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        name: Detect Secrets - scan for API keys / passwords
+        args: ['--baseline', '.secrets.baseline']
+
+  # =========================================================================
+  # Python - Formatter & Linter
+  # =========================================================================
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.6
+    hooks:
+      - id: ruff
+        name: Ruff Linter (Python)
+        args: [--fix]
+      - id: ruff-format
+        name: Ruff Formatter (Python)

@@ -1,0 +1,6 @@
+{% if history_warnings %}
+<div class="notice error" role="alert"><span aria-hidden="true">×</span><div>
+  <p>以下帳戶與商品的交易歷史不一致，已暫時不列入持股與配息計算，合計不完整。請檢查交易紀錄：</p>
+  <ul>{% for w in history_warnings %}<li>{{ w.broker_account_name }} · {{ w.security_code }} {{ w.security_name }}：{{ {"out_of_range": "金額或股數超出可計算範圍", "foreign_currency": "外幣計價，未列入新台幣合計"}.get(w.reason, "賣出超過持有股數") }}（<a href="/transactions/{{ w.trade_id }}/edit">檢查受影響的交易</a>）{% if w.revision_id %} · <a href="/corporate-actions#revision-{{ w.revision_id }}">查看官方比例修訂</a>{% endif %}</li>{% endfor %}</ul>
+</div></div>
+{% endif %}

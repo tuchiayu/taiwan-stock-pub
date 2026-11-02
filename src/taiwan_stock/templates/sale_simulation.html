@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% from "_cost_quality.html" import cost_quality %}
+{% block title %}試算部分賣出 - 台灣股市數據工具{% endblock %}
+{% block content %}
+{% for warning in pricing_warnings %}<p class="notice">{{ warning }}</p>{% endfor %}
+{% for notice in pricing_notices %}<p class="notice">{{ notice }}</p>{% endfor %}
+<section class="workspace-controls" aria-label="賣出試算操作"><div class="workspace-heading">
+  <div>
+    <h1>試算部分賣出</h1>
+    <p class="inline-meta">{{ security.code }} {{ security.name }}{% if position %} · 可賣 {{ position.remaining_quantity|number(0) }} 股{% endif %} · 僅試算，不會新增交易</p>
+  </div>
+  <a class="button secondary" href="/">返回我的持股</a>
+</div>
+    <form method="get" action="/sale-simulation" class="toolbar-form workspace-filterbar">
+      <input type="hidden" name="broker_account_id" value="{{ broker_account_id }}" />
+      <input type="hidden" name="security_id" value="{{ security_id }}" />
+      <label>試算股數（股）<input type="number" name="quantity" placeholder="例如 1000" value="{{ quantity or '' }}" min="1" required /></label>
+      <label>假設賣價（元，選填）<input name="price" inputmode="decimal" placeholder="留空只計算回本價" value="{{ price }}" /></label>
+      <button type="submit">試算</button>
+    </form>
+</section>
+
+{% if error %}
+<div class="notice error"><span aria-hidden="true">×</span><div>{{ error }}</div></div>
+{% endif %}
+
+<section class="panel workspace-data workspace-key-values"><div class="workspace-data-heading"><h2>試算結果</h2><p>金額：新臺幣元</p></div>
+  {{ cost_quality(cost_estimates, broker_account_id) }}
+  {% if result %}
+  <div class="table-wrap">
+    <table class="key-value-table">
+      <tbody>
+        <tr>
+          <th scope="row">試算股數</th>
+          <td class="col-number">{{ result.quantity|number(0) }}</td>
+        </tr>
+        <tr>
+          <th scope="row">這批股數的成本</th>
+          <td class="col-number">{% if result.cost_consumed is not none %}{{ result.cost_consumed|number(0) }}{% else %}成本未知{% endif %}</td>
+        </tr>
+        <tr>
+          <th scope="row">回本價</th>
+          <td class="col-number">{% if result.breakeven_price is not none %}{{ result.breakeven_price|number }}{% else %}—{% endif %}</td>
+        </tr>
+        {% if result.price is not none %}
+        <tr>
+          <th scope="row">假設賣價 {{ result.price|number }} 的預估實收</th>
+          <td class="col-number">{{ result.net_proceeds|number(0) }}</td>
+        </tr>
+        <tr>
+          <th scope="row">預估淨損益</th>
+          <td class="col-number">{% if result.realized_pnl is not none %}{{ result.realized_pnl|number(0) }}{% else %}成本未知，無法算損益{% endif %}</td>
+        </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}<p class="workspace-empty">輸入欲賣出的股數，再按「試算」查看成本、回本價與預估損益。</p>{% endif %}
+</section>
+{% endblock %}

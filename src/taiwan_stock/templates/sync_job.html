@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}同步任務 - 台灣股市數據工具{% endblock %}
+{% block content %}
+<section class="workspace-controls" aria-label="同步任務操作"><div class="workspace-heading"><h1>同步任務</h1><div class="actions page-actions"><a class="button secondary" href="/">返回我的持股</a><a class="button secondary" href="/sync-jobs/{{ job.id }}">重新取得狀態</a></div></div><div class="workspace-toolbar">  {% if retry_allowed %}<form method="post" action="/sync-jobs/{{ job.id }}/retry"><input type="hidden" name="request_key" value="{{ retry_key }}"><button type="submit" class="secondary">重試未完成項目</button></form>
+  {% elif job.status in ['partial','failed','interrupted'] %}<p>此操作僅提供終端機重試：<code>taiwan-stock sync retry-job {{ job.id }}</code></p>{% endif %}
+</div></section>
+<section class="panel workspace-data" data-sync-detail="{{ job.id }}"><div class="workspace-data-heading"><h2>執行結果</h2></div><div class="panel-body workspace-result">
+  <p class="workspace-state">狀態：<span data-sync-state>{{ status_labels.get(job.status, job.status) }}</span></p>
+  <p>階段：{{ job.phase }} · 已處理 {{ job.processed|number(0) }}{% if job.total is not none %}／{{ job.total|number(0) }}{% endif %}</p>
+  {% include "_suspected_changes.html" %}
+  {% if job.failed_units %}<p>已記錄 {{ job.failed_units|number(0) }} 個來源單位未完成，請查看下方來源報告。</p>{% endif %}
+  {% if job.result and job.result.validation_errors %}<div class="notice error"><p>來源比例驗證失敗；其他有效配息已保存。可重試失敗的市場來源階段。</p><ul>{% for item in job.result.validation_errors %}<li>{{ item.market }} {{ item.code }} · {{ item.ex_date }}：{{ item.reason }}</li>{% endfor %}</ul></div>{% endif %}
+  {% if job.result and job.result.reconciliation_warnings %}<p class="notice">官方資料已更新，本地交易需核對。<a href="/corporate-actions">查看修訂紀錄</a>；重抓資料不會修正交易缺漏。</p>{% endif %}
+  {% if job.summary %}<p>{{ job.summary }}</p>{% endif %}
+  {% set changed = (job.result.changed_fields if job.operation == 'investment-trust' else (job.result.etf_profiles or {}).changed_fields if job.operation == 'etf-data' else none) if job.result else none %}{% if changed %}<p>本次欄位更新：銀行 {{ changed.custodian_bank }}、頻率 {{ changed.distribution_frequency }}、政策 {{ changed.distribution_policy }}、發行人 {{ changed.issuer_name }}、指數 {{ changed.benchmark }}。</p>{% endif %}
+  <p class="inline-meta">開始：{{ (job.started_at or job.submitted_at)|taipei_time }}；最後更新：{{ (job.heartbeat_at or job.submitted_at)|taipei_time }}</p>
+  {% if job.status in ['partial','failed','interrupted'] %}<p>部分工作尚未完成，資料可能未齊全。重試會沿用原任務範圍，處理未完成的工作。</p>{% endif %}
+  {% if job.error %}<p class="notice error" role="alert">{{ job.error }}</p>{% endif %}
+  {% if retry_error %}<p class="notice error" role="alert">{{ retry_error }}{% if active_job_id %} <a href="/sync-jobs/{{ active_job_id }}">查看執行中的任務</a>{% endif %}</p>{% endif %}
+  {% if job.retry_of %}<p><a href="/sync-jobs/{{ job.retry_of }}">查看原任務與已完成工作</a></p>{% endif %}
+  {% for report in job.reports %}<p><a href="/catalog-sync-runs/{{ report.id }}">{{ report.source }}：{{ status_labels.get(report.status, report.status) }}</a></p>{% endfor %}
+  <details class="data-help"><summary>技術明細與終端機操作</summary><p>原始狀態：{{ job.status }}</p>{% if job.result %}<pre>{{ job.result | tojson(indent=2) }}</pre>{% endif %}{% if job.status in ['partial','failed','interrupted'] %}<p><code>taiwan-stock sync retry-job {{ job.id }}</code></p>{% endif %}</details>
+</div></section>
+{% endblock %}

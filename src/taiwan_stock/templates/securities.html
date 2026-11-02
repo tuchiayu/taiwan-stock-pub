@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% from "_actions.html" import sync_button with context %}
+{% from "_pagination.html" import pagination %}
+{% from "_profile_value.html" import profile_value with context %}
+{% block title %}商品查詢 - 台灣股市數據工具{% endblock %}
+{% block head %}{% if security_type == 'etf' %}<script src="/static/etf-scale.js?v=1" defer></script>{% endif %}{% endblock %}
+{% block content %}
+{% macro column(key, label) %}
+<th scope="col" class="{{ {'code':'col-code', 'name':'col-name', 'market':'col-status', 'industry':'col-industry', 'net_assets':'col-number col-size', 'holders':'col-number col-holders', 'latest_close':'col-number col-quote', 'change_pct':'col-number col-change', 'bank':'col-bank', 'frequency':'col-frequency', 'next_distribution':'col-next-event', 'pay_date':'col-event', 'yield':'col-number col-yield'}.get(key, 'col-text') }}"{% if sort == key %} aria-sort="{{ 'ascending' if direction == 'asc' else 'descending' }}"{% endif %}{% if key == 'change_pct' %} title="依兩日收盤價計算，未還原權息；跨休市或資料不足顯示 —"{% endif %} data-col-key="{{ key }}">
+  <a class="sort-heading" href="{{ sort_links[key] }}">{{ label }}<span class="sort-indicator" aria-hidden="true"></span></a>
+</th>
+{% endmacro %}
+{% macro price_change(item) %}
+{% if item.change_pct is not none %}<span class="{{ 'gain' if item.change_pct > 0 else ('loss' if item.change_pct < 0 else 'unchanged') }}">{{ '+' if item.change_pct > 0 else '' }}{{ item.change_pct|number(2, true) }}%</span>{% else %}—{% endif %}
+{% endmacro %}
+{# Design 048 §4.2.2: a delisted row reads 已下市 whatever value it still holds. #}
+{% macro delisted_value() %}<span class="profile-entry"><span class="profile-line"><span class="profile-value tier-unknown">已下市</span></span></span>{% endmacro %}
+{% macro bank_cell(item) %}
+{% if item.status == 'delisted' %}{{ delisted_value() }}{% else %}
+{{ profile_value(item.custodian_bank_display, item.custodian_bank_display.value or item.bank_missing_reason, stack_source=true, compact=true) }}
+{% if item.bank_conflict %}<small>來源不一致，待核對</small>{% endif %}
+{% if item.bank_sync_failed and item.custodian_bank_display.value %}<small>更新失敗，保留上次資料</small>{% endif %}
+{% endif %}
+{% endmacro %}
+{% macro frequency_cell(item) %}
+{% if item.status == 'delisted' %}{{ delisted_value() }}{% else %}
+{{ profile_value(item.distribution_frequency_display, item.distribution_frequency_display.label if item.distribution_frequency_display.value else item.frequency_missing_reason, item.distribution_frequency_display.month_pattern if item.distribution_frequency_display.value != 'monthly' else none, compact=true) }}
+{% endif %}
+{% endmacro %}
+{% set show_delisted = include_delisted or view == 'watchlist' %}
+{% macro size_cell(item) %}{% if item.net_assets is not none %}<span title="{{ item.net_assets|number(0) }} 元 · {{ scale_dates.size }} · 投信投顧公會">{{ item.net_assets|hundred_million }}</span>{% else %}—{% endif %}{% endmacro %}
+{% macro holders_cell(item) %}{% if item.holders is not none %}<span title="{{ scale_dates.holders }} · 集保戶股權分散表">{{ item.holders|number(0) }}</span>{% else %}—{% endif %}{% endmacro %}
+{% macro watch_button(item) %}<button type="submit" class="secondary" aria-label="{{ '取消追蹤' if item.id in watchlist_ids else '加入追蹤' }} {{ item.code }} {{ item.name }}">{{ '取消' if item.id in watchlist_ids else '加入' }}</button>{% endmacro %}
+{% macro next_distribution_cell(item) %}
+{% set event = item.next_distribution %}
+{% if event %}{% if event.ex_dividend_date and event.ex_dividend_date >= today %}除息 {{ event.ex_dividend_date|replace('-', '/') }}{% elif event.ex_dividend_date %}已除息{% else %}除息日待確認{% endif %}
+<small class="cell-note">{{ ('發放 ' ~ event.pay_date|replace('-', '/')) if event.pay_date else '發放日待確認' }} · {% if event.amount_per_share is not none %}{{ event.amount_per_share|number(none, true) }} 元{% if event.amount_status == 'estimated' %}（預估）{% endif %}{% else %}金額待確認{% endif %}</small>{% else %}—{% endif %}
+{% endmacro %}
+<section class="workspace-controls securities-controls" aria-label="商品查詢操作">
+  <div class="workspace-heading">
+    <h1>商品查詢</h1>
+    <div class="actions page-actions" role="group" aria-label="頁面操作">
+      {% if security_type != 'etf' %}<form method="post" action="/securities/sync" data-sync-operation="catalog" class="inline-form sync-form"><input type="hidden" name="request_key" value="{{ sync_keys['catalog'] }}"><input type="hidden" name="return_to" value="{{ return_to }}">{{ sync_button('catalog', '同步商品名單', '同步 TWSE／TPEx 商品名單與上市狀態') }}</form>{% endif %}
+      {% if security_type == 'etf' %}<form method="post" action="/securities/profiles/sync" data-sync-operation="etf-data" class="inline-form sync-form"><input type="hidden" name="request_key" value="{{ sync_keys['etf-data'] }}"><input type="hidden" name="return_to" value="{{ return_to }}">{{ sync_button('etf-data', '同步 ETF 資料', '依序同步商品名單、ETF 基本資料與全市場本年配息，約 30 分鐘；進度及結果會顯示於上方') }}</form>{% endif %}
+      <details class="workspace-tools"><summary class="button secondary">資料工具</summary>
+<div class="workspace-tools-body">
+  <section id="securities-help">
+    <h3>資料說明</h3>
+    <div class="securities-support-content">
+      {% if security_type != 'etf' %}<p>頁首「同步商品名單」會更新 TWSE／TPEx 商品名單與上市狀態。</p>{% endif %}
+      <p>搜尋條件留空即列出全部商品。點欄位名稱可排序，先排序所有符合條件的商品，再分頁。近一年殖利率依已知紀錄計算。</p>
+      <p>收盤價以所列日期為準。漲跌幅依兩日收盤價計算，未還原權息；僅在相鄰平日（含週末銜接）資料齊全時顯示，跨休市或資料不足顯示「—」。</p>
+      {% if security_type == 'etf' %}
+      <p>「同步 ETF 資料」會依序更新商品名單、官方銀行／配息政策／基本資料，以及全市場本年配息。持有或追蹤的 ETF 可在領息月曆快速同步配息；歷史年份另可使用 <code>taiwan-stock sync etf-distributions</code>。結果可由「同步紀錄」查看。</p>
+      <p>銀行有值 {{ coverage.bank_known }}／{{ coverage.bank_total }}；頻率：官方 {{ coverage.official_frequency }}、不配息 {{ coverage.non_distributing }}、歷史 {{ coverage.get('inferred', 0) }}、自訂 {{ coverage.get('user_override', 0) }}／{{ coverage.frequency_total }} 檔。各欄覆蓋統計套用其餘條件，不套該欄自身篩選。</p>
+      <p>保管銀行與配息頻率未標示來源的為官方公告資料；「同基金」沿用同一基金新台幣主級別的官方資料；「歷史」表示依歷史配息紀錄判斷，非官方確認；「自訂」為使用者自行設定。頻率下方為除息月份，標示「暫定」的只依最近一次配息判斷，下次配息後確認；滑鼠移到月份上可查看月份來源，詳情頁也會列出。收益分配評價月份不等於除息月份。</p>
+      <p>官方年配的除息月份取自配息紀錄：最近 2 次在同一個月即確定，只配過 1 次的標示「暫定」。</p>
+      <p>保管銀行與配息頻率篩選的「資料不足」只計算交易中的商品。全部商品預設不列出已下市商品，可點「包含已下市」顯示；追蹤清單一律列出。</p>
+      <p>規模為投信投顧公會 ETF 月報的基金規模（新台幣，億元），每月更新、約延遲一個月；公會未收錄期貨信託 ETF 與 K 級別，這些商品顯示「—」。受益人數為集保戶股權分散表的合計人數，每週更新；公會月報另有受益人數，但計算口徑不同，本欄只採集保資料。開啟本頁時若資料過期會自動於背景更新，失敗時保留既有資料。</p>
+      <p>近一年殖利率取最近 12 個月再放寬半個週期內（年配為去年 1 月 1 日起）的最新 N 次配息（年配 1、半年配 2、季配 4、雙月配 6、月配 12）。最近才開始配息、未滿 N 次的以平均每次 × N 推估並標示「推估」；已配息多年但範圍內次數不足的以實際加總並標示「近一年僅配 k 次」；範圍內沒有配息的顯示 0.00%（近一年未配息）；配息間隔顯示頻率近期變動時改以最近 12 個月實際配息加總。</p>
+      <p>季配依除息月分為 1、4、7、10 月／2、5、8、11 月／3、6、9、12 月三組，最近配息中有 2 次同組即確定，只配過 1 次的標示「暫定」。官方頻率與最近完整年度的實際配息次數不一致，或今年至今的配息次數已超過官方頻率時，會標示「官方與紀錄不符」。</p>
+      <p>發放月份只比對已公告日期；缺值不代表不配息。</p>
+      <p>下次配息只列出已公告、尚未除息或尚未發放的配息；顯示「—」表示尚無公告，不代表不配息。</p>
+      {% endif %}
+    </div>
+  </section>
+  <section id="securities-sync-history">
+    <h3>同步紀錄</h3><p class="inline-meta">已同步 {{ catalog_size }} 檔商品</p>
+    <div class="securities-support-content">
+      {% if latest_sync %}<p>最近同步結束：{{ latest_sync|taipei_time }}</p>{% endif %}
+      {% if sync_runs %}
+      <p>最近 {{ sync_runs | length }} 筆紀錄，點選查看明細與失敗原因。</p>
+      <ul>{% for run in sync_runs %}<li><a href="/catalog-sync-runs/{{ run.id }}">{{ source_labels.get(run.source, run.source) }} · {{ run.started_at|taipei_time }} · {{ {'success':'完成','partial':'部分成功','failed':'失敗','running':'執行中','pending':'準備中','interrupted':'中斷'}.get(run.status, run.status) }}</a></li>{% endfor %}</ul>
+      {% else %}<p>尚無同步紀錄。</p>{% endif %}
+    </div>
+  </section>
+</div>
+      </details>
+    </div>
+  </div>
+  <div class="securities-query-row">
+<div class="tabs" role="group" aria-label="商品類型">
+  <a href="{{ stock_url }}"{% if security_type == 'stock' %} aria-current="page"{% endif %}>股票</a>
+  <a href="{{ etf_url }}"{% if security_type == 'etf' %} aria-current="page"{% endif %}>ETF</a>
+</div>
+<div class="tabs" role="group" aria-label="查詢範圍">
+  <a href="{{ all_url }}"{% if view == 'all' %} aria-current="page"{% endif %} title="全部商品">全部商品</a>
+  <a href="{{ watchlist_url }}"{% if view == 'watchlist' %} aria-current="page"{% endif %} aria-label="我的追蹤清單（{{ watchlist_count }}）">追蹤（{{ watchlist_count }}）</a>
+</div>
+    <form method="get" action="/securities" class="toolbar-form securities-filters">
+      <input type="hidden" name="view" value="{{ view }}"><input type="hidden" name="security_type" value="{{ security_type }}">
+      <input type="hidden" name="sort" value="{{ sort }}"><input type="hidden" name="direction" value="{{ direction }}">{% if include_delisted %}<input type="hidden" name="include_delisted" value="1">{% endif %}
+      <label>代碼或名稱<input type="search" name="q" value="{{ query }}" placeholder="例如 0050、台灣50"></label>
+      <label>市場<select name="market"><option value="">上市／上櫃（不限）</option><option value="TWSE"{% if market == 'TWSE' %} selected{% endif %}>上市（TWSE）</option><option value="TPEx"{% if market == 'TPEx' %} selected{% endif %}>上櫃（TPEx）</option></select></label>
+      <button type="submit" class="secondary">查詢</button>
+      {% if view == 'all' %}<a href="{{ include_delisted_url }}" data-include-delisted>{{ '隱藏已下市' if include_delisted else '包含已下市（' ~ delisted_hidden ~ '）' }}</a>{% endif %}
+      <details class="advanced-filters"{% if industry or pay_month or custodian_bank or distribution_frequency %} open{% endif %}><summary>更多篩選{% if industry or pay_month or custodian_bank or distribution_frequency %}（已套用）{% endif %}</summary><div class="advanced-filter-fields">
+      {% if security_type == 'stock' %}
+      <label>產業<select name="industry"><option value="">產業別（不限）</option>{% for ind in industries %}<option value="{{ ind }}"{% if industry == ind %} selected{% endif %}>{{ ind|industry_filter_label }}</option>{% endfor %}</select></label>
+      {% else %}
+      <label>已公告發放月份<input type="month" name="pay_month" value="{{ pay_month }}"></label>
+      <label>保管銀行<select name="custodian_bank"><option value="">保管銀行（不限）</option><option value="unknown"{% if custodian_bank == 'unknown' %} selected{% endif %}>資料不足（{{ bank_counts.get(none, 0) }}）</option>{% if show_delisted %}<option value="delisted"{% if custodian_bank == 'delisted' %} selected{% endif %}>已下市（{{ bank_delisted_count }}）</option>{% endif %}{% for bank in custodian_banks %}<option value="{{ bank }}"{% if custodian_bank == bank %} selected{% endif %}>{{ bank }}（{{ bank_counts[bank] }}）</option>{% endfor %}{% if custodian_bank and custodian_bank != 'unknown' and custodian_bank not in custodian_banks %}<option value="{{ custodian_bank }}" selected>{{ custodian_bank }}（目前條件無結果）</option>{% endif %}</select></label>
+      <label>配息頻率<select name="distribution_frequency"><option value="">配息頻率（不限）</option>{% for key, label in distribution_frequency_labels.items() if show_delisted or key != 'delisted' %}<option value="{{ key }}"{% if distribution_frequency == key %} selected{% endif %}>{{ label }}（{{ frequency_counts[key] }}）</option>{% endfor %}</select></label>
+      {% endif %}
+      </div></details>
+    </form>
+  </div>
+
+    {% if invalid_bank %}<p class="notice error">銀行條件已失效，請重新選擇或清除條件。</p>{% endif %}
+    {% if query or market or industry or pay_month or custodian_bank or distribution_frequency %}<div class="active-filters" aria-label="已套用條件"><strong>目前條件</strong>
+      {% if query %}<span>關鍵字：{{ query }}</span>{% endif %}{% if market %}<span>市場：{{ market }}</span>{% endif %}{% if industry %}<span>產業：{{ industry|industry_filter_label }}</span>{% endif %}{% if pay_month %}<span>發放月份：{{ pay_month }}</span>{% endif %}{% if custodian_bank %}<span>保管銀行：{{ {'unknown': '資料不足', 'delisted': '已下市'}.get(custodian_bank, custodian_bank) }}</span>{% endif %}{% if distribution_frequency %}<span>配息頻率：{{ distribution_frequency_labels[distribution_frequency] }}</span>{% endif %}<a href="{{ clear_url }}">清除條件</a></div>{% endif %}
+</section>
+{% if synced is not none %}<div class="notice success">商品名單同步完成，共 {{ synced }} 檔。{% if not status_error %}上市／上櫃狀態已核對官方資料。{% endif %}</div>{% endif %}
+{% if status_error %}<div class="notice error">商品名單已更新；上市／上櫃狀態同步未全部完成：{{ status_error }}。請查看最近同步紀錄。</div>{% endif %}
+{% if sync_error %}<div class="notice error">同步失敗：{{ sync_error }}</div>{% endif %}
+{% if watchlist_added %}<div class="notice success">已加入追蹤清單。</div>{% endif %}
+{% if watchlist_removed %}<div class="notice success">已從追蹤清單移除。</div>{% endif %}
+<section class="panel securities-panel workspace-data" aria-label="商品查詢結果">
+  <div class="workspace-data-heading"><h2>{{ '我的追蹤' if view == 'watchlist' else '商品列表' }} <span class="muted">／ {{ 'ETF' if security_type == 'etf' else '股票' }}</span></h2><p role="status">符合 <strong>{{ total_results }}</strong> 檔／第 {{ page }} 頁，共 {{ total_pages }} 頁</p></div>
+  {% if security_type == 'etf' %}<p class="workspace-report-status inline-meta" aria-label="ETF 資料覆蓋">有效商品 {{ result_coverage.total }} 檔 · 銀行 {{ result_coverage.bank_known }} · 官方頻率 {{ result_coverage.official }} · 不配息 {{ result_coverage.non_distributing }} · 歷史 {{ result_coverage.inferred }}{% if result_coverage.user_override %} · 自訂 {{ result_coverage.user_override }}{% endif %} · 待確認 {{ result_coverage.unknown }}</p>
+  <p class="workspace-report-status inline-meta" data-etf-scale-status aria-live="polite"><span data-etf-scale-message>{% if scale_dates.size or scale_dates.holders %}{% if scale_dates.size %}規模 {{ scale_dates.size }}{% endif %}{% if scale_dates.size and scale_dates.holders %} · {% endif %}{% if scale_dates.holders %}受益人數 {{ scale_dates.holders }}{% endif %}{% else %}規模／受益人數尚未取得{% endif %}</span>{% if distribution_freshness %}<span data-distribution-freshness> · {{ distribution_freshness }}</span>{% endif %} <button type="button" class="secondary" data-etf-scale-retry hidden>重試</button></p>{% endif %}
+  <div class="table-wrap desktop-record-table" tabindex="0" role="region" aria-label="商品查詢表格，可水平捲動">
+    {% set column_count = 8 if security_type == 'stock' else (13 if pay_month else 12) %}
+    <table class="securities-table{% if security_type == 'etf' and pay_month %} has-payment-month{% endif %}" data-security-type="{{ security_type }}" data-view="{{ view }}">
+      <thead><tr>
+        {{ column('code', '代碼') }}{{ column('name', '名稱') }}{{ column('market', '市場') }}
+        {% if security_type == 'stock' %}{{ column('industry', '產業') }}{% else %}
+          {{ column('net_assets', '規模（億元）') }}{{ column('holders', '受益人數') }}{{ column('bank', '保管銀行') }}{{ column('frequency', '配息頻率') }}{{ column('next_distribution', '下次配息') }}
+          {% if pay_month %}{{ column('pay_date', pay_month ~ ' 發放事件') }}{% endif %}
+        {% endif %}
+        {{ column('latest_close', '最新收盤') }}{{ column('change_pct', '漲跌幅') }}{{ column('yield', '近一年殖利率') }}
+        <th scope="col" class="col-actions">追蹤</th>
+      </tr></thead>
+      <tbody>{% for item in results %}<tr>
+        <th scope="row" class="col-code"><a href="/securities/{{ item.id }}">{{ item.code }}</a></th>
+        <td class="col-name"><a href="/securities/{{ item.id }}">{{ item.name }}</a>
+          {% if item.status == 'delisted' %}<small>{{ '已下市' if item.market == 'TWSE' else '已下櫃' }}{% if item.delisted_date %} · {{ item.delisted_date }}{% endif %}</small>
+          {% elif item.delisted_date %}<small>預定{{ '下市' if item.market == 'TWSE' else '下櫃' }} · {{ item.delisted_date }}</small>{% endif %}</td><td class="col-status">{{ item.market|market_label }}</td>
+        {% if security_type == 'stock' %}<td class="col-industry"{% if item.industry %} title="產業代碼 {{ item.industry }}"{% endif %}>{{ item.industry_name }}</td>{% else %}
+          <td class="col-number col-size">{{ size_cell(item) }}</td>
+          <td class="col-number col-holders">{{ holders_cell(item) }}</td>
+          <td class="col-bank">{{ bank_cell(item) }}</td>
+          <td class="col-frequency">{{ frequency_cell(item) }}</td>
+          <td class="col-next-event">{{ next_distribution_cell(item) }}</td>
+          {% if pay_month %}<td class="col-event">{% if item.month_events %}{{ item.month_events[0].pay_date }}／{{ item.month_events[0].amount_per_share|number(none, true) if item.month_events[0].amount_per_share is not none else '金額待確認' }}{% if item.month_events|length > 1 %}<a href="/securities/{{ item.id }}">（共 {{ item.month_events|length }} 筆，詳情展開）</a>{% endif %}{% else %}—{% endif %}</td>{% endif %}
+        {% endif %}
+        <td class="col-number col-quote">{{ item.latest_close|number }}{% if item.close_date %}<small>{{ item.close_date|replace('-', '/') }}</small>{% endif %}</td><td class="col-number col-change">{{ price_change(item) }}</td>
+        <td class="col-number col-yield">{{ '%.2f'|format(item.current_yield) ~ '%' if item.current_yield is not none else '—' }}{% for line in item.yield_notes %}<small class="cell-note">{{ line }}</small>{% endfor %}</td>
+        <td class="col-actions"><form method="post" action="{{ '/watchlist/remove' if item.id in watchlist_ids else '/watchlist/add' }}" class="inline-form"><input type="hidden" name="security_id" value="{{ item.id }}"><input type="hidden" name="return_to" value="{{ return_to }}">{{ watch_button(item) }}</form></td>
+      </tr>{% else %}<tr><td colspan="{{ column_count }}" class="empty">{{ '目前這個類型的追蹤清單中沒有商品。' if view == 'watchlist' and not watchlist_count else '查無符合條件的商品' }}</td></tr>{% endfor %}</tbody>
+    </table>
+  </div>
+  <ul class="mobile-records" aria-label="商品查詢結果">
+    {% for item in results %}<li>
+      <div class="mobile-record-head"><strong><a href="/securities/{{ item.id }}">{{ item.code }} {{ item.name }}</a></strong><span>{{ item.market|market_label }}</span></div>
+      {% if item.status == 'delisted' %}<p class="inline-meta">{{ '已下市' if item.market == 'TWSE' else '已下櫃' }}{% if item.delisted_date %} · {{ item.delisted_date }}{% endif %}</p>{% endif %}
+      {% if security_type == 'stock' %}<p class="inline-meta">產業 {{ item.industry_name }}</p>{% endif %}
+      <div class="mobile-record-metrics"><span>最新收盤 {{ item.latest_close|number }}</span><span>漲跌幅 {{ price_change(item) }}</span></div>{% if item.close_date %}<p class="inline-meta">收盤 {{ item.close_date|replace('-', '/') }}</p>{% endif %}
+      {% if security_type == 'etf' %}<div class="mobile-record-metrics"><span>規模 {{ item.net_assets|hundred_million }}{% if item.net_assets is not none %} 億{% endif %}</span><span>受益人數 {{ item.holders|number(0) }}</span></div>{% endif %}
+      <p>近一年殖利率 {{ '%.2f'|format(item.current_yield) ~ '%' if item.current_yield is not none else '—' }}</p><p class="inline-meta">{{ item.yield_notes|join(' · ') }}</p>
+      {% if security_type == 'etf' %}
+      <div class="mobile-profile-field"><span class="mobile-profile-label">保管銀行</span><div class="mobile-profile-content">{{ bank_cell(item) }}</div></div>
+      <div class="mobile-profile-field"><span class="mobile-profile-label">配息頻率</span><div class="mobile-profile-content">{{ frequency_cell(item) }}</div></div>
+      <div class="mobile-profile-field"><span class="mobile-profile-label">下次配息</span><div class="mobile-profile-content">{{ next_distribution_cell(item) }}</div></div>
+      {% endif %}
+      <div class="mobile-record-actions"><a href="/securities/{{ item.id }}">查看詳情</a><form method="post" action="{{ '/watchlist/remove' if item.id in watchlist_ids else '/watchlist/add' }}" class="inline-form"><input type="hidden" name="security_id" value="{{ item.id }}"><input type="hidden" name="return_to" value="{{ return_to }}">{{ watch_button(item) }}</form></div>
+    </li>{% else %}<li class="empty">{{ '目前這個類型的追蹤清單中沒有商品。' if view == 'watchlist' and not watchlist_count else '查無符合條件的商品' }}</li>{% endfor %}
+  </ul>
+  {{ pagination(page, total_pages, page_link, '商品查詢分頁') }}
+</section>
+{% endblock %}

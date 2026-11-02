@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{% block title %}台灣股市數據工具 Taiwan Stock{% endblock %}</title>
+    <link rel="stylesheet" href="/static/app.css?v=21" />
+    <link rel="stylesheet" href="/static/workspace.css?v=13" />
+    {% block head %}{% endblock %}
+  </head>
+  <body class="{% block body_class %}{% endblock %}">
+    <a class="skip" href="#main">跳到主要內容</a>
+    <header class="site-header">
+      <div class="shell app-header">
+        <a class="brand" href="/" aria-label="台灣股市數據工具，回到我的持股">
+          <span class="mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5v15h16M8 15V9m5 6V5m5 10v-5" /></svg>
+          </span>
+          <span class="brand-name">台灣股市數據工具</span>
+        </a>
+        <div class="desktop-navigation">{% include "_nav.html" %}</div>
+        <details class="mobile-navigation">
+          <summary>選單</summary>
+          {% include "_nav.html" %}
+        </details>
+      </div>
+    </header>
+    <main class="shell" id="main">
+      {% include "_sync_status.html" %}
+      {% if save_notice %}<p class="notice success" role="status">{{ save_notice }}</p>{% endif %}
+      {% block content %}{% endblock %}
+    </main>
+    <footer>
+      <div class="shell footer-content">
+        <span>台灣股市數據工具</span>
+        <span>{% if version %}版本 {{ version }}{% endif %}</span>
+      </div>
+    </footer>
+    <script src="/static/form-feedback.js?v=1" defer></script>
+    <script src="/static/sync-jobs.js?v=3" defer></script>
+    <!-- After page scripts in head: holdings-table.js rebuilds its headers first. -->
+    <script src="/static/table-columns.js?v=1" defer></script>
+  </body>
+</html>

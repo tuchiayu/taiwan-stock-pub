@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+{% from "_actions.html" import sync_button with context %}
+{% block title %}領息月曆 - 台灣股市數據工具{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="/static/income-calendar.css?v=18">
+<script src="/static/income-calendar.js?v=6" defer></script>
+<script src="/static/market-calendar.js?v=2" defer></script>
+{% endblock %}
+{% block body_class %}{% if monthly and not error %}income-month-page{% endif %}{% endblock %}
+{% macro money(value) -%}
+{% if value is none %}待確認{% else %}{{ value|number(0) }}{% endif %}
+{%- endmacro %}
+{% macro scope_picker() %}
+<form action="/income-calendar" method="get" class="income-scope-picker">
+  {% for name, value in filter_form_state.items() %}{% if value %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endif %}{% endfor %}
+  <label class="income-scope-label" for="income-scope">查看範圍</label>
+  <span class="income-sr-only" id="income-scope-help">選擇後更新月曆或公告，可依證券帳戶或領息銀行查看。</span>
+  <select id="income-scope" name="filter" aria-describedby="income-scope-help" title="{{ scope.description }}" data-income-scope>
+    <option value="all" {% if scope.kind == 'all' %}selected{% endif %}>全部</option>
+    {% if scope_options.accounts %}<optgroup label="依證券帳戶">
+      {% for option in scope_options.accounts %}<option value="{{ option.value }}" {% if scope.value == option.value %}selected{% endif %}>{{ option.label }}</option>{% endfor %}
+    </optgroup>{% endif %}
+    {% if scope_options.banks %}<optgroup label="依領息銀行">
+      {% for option in scope_options.banks %}<option value="{{ option.value }}" {% if scope.value == option.value %}selected{% endif %}>{{ option.label }}</option>{% endfor %}
+    </optgroup>{% endif %}
+  </select>
+  <button type="submit" class="secondary" data-income-scope-submit>查看</button>
+</form>
+{% endmacro %}
+{% macro payment(e) %}
+<details class="income-payment" open>
+  <summary>
+    <span class="income-security">{{ e.security_code }} {{ e.security_name }}<small>{{ e.broker_account_name }} · {{ e.bank or "銀行未設定" }}</small></span>
+    <span class="income-payment-status {% if e.is_future %}income-projected{% else %}income-confirmed{% endif %}">{{ "依目前持股試算" if e.is_future else "權益已確定" }}</span>
+    {% if e.reconciliation_status == "needs_review" %}<span class="income-payment-status income-needs-review" title="{{ e.reconciliation_note }}">來源待覆核</span>{% endif %}
+    <strong class="numeric">{{ money(e.expected_gross) }}</strong>
+  </summary>
+  <dl class="income-facts">
+    <div><dt>除息日</dt><dd>{{ e.ex_dividend_date or "未公告" }}</dd></div>
+    <div><dt>適用股數</dt><dd>{{ e.entitled_quantity|number(0) }}</dd></div>
+    <div><dt>每股配息</dt><dd>{{ e.amount_per_share|number(none, true) if e.amount_per_share is not none else "未知" }}</dd></div>
+    {% if e.reconciliation_status == "needs_review" %}<div><dt>資料狀態</dt><dd>{{ e.reconciliation_note }}</dd></div>{% endif %}
+  </dl>
+</details>
+{% endmacro %}
+{% block content %}
+{% include "_history_warnings.html" %}
+{% if notice == "preview-removed" %}
+<div class="notice" role="status">未來 12 個月推估功能已下線，這裡改為顯示已公告配息。</div>
+{% endif %}
+{% if error %}
+<h1>領息月曆</h1>
+<div class="notice error" role="alert">{{ error }}</div>
+<a href="/income-calendar">回到本月</a>
+{% elif monthly %}
+{% if etf_refresh %}<div class="notice {% if etf_refresh_failed %}error{% else %}success{% endif %} income-refresh-notice" role="status">{{ etf_refresh }}</div>{% endif %}
+<section class="workspace-controls income-controls" aria-label="月曆操作">
+  <div class="workspace-heading"><h1>領息月曆</h1></div>
+<div class="income-toolbar">
+  <div class="income-month-nav">
+    {% if previous_month %}<a class="button secondary" href="{{ previous_url }}" aria-label="上一個月">‹</a>{% endif %}
+    <form action="/income-calendar" method="get" class="income-month-picker">
+      <input type="hidden" name="filter" value="{{ scope.value }}">
+      <label class="income-month-label" for="income-month">{{ month_label }}</label>
+      <input id="income-month" class="income-month-input" type="month" name="month" value="{{ month }}" title="選擇月份" data-income-month required>
+      <button type="submit" class="secondary" data-income-month-submit>查看</button>
+    </form>
+    {% if next_month %}<a class="button secondary" href="{{ next_url }}" aria-label="下一個月">›</a>{% endif %}
+    <a href="{{ today_url }}" class="button secondary income-today">本月</a>
+  </div>
+  {{ scope_picker() }}
+  <div class="actions page-actions income-page-actions" role="group" aria-label="頁面操作">
+    <form action="/income-calendar/refresh-etf" data-sync-operation="held-etf-distributions" method="post" class="income-refresh sync-form" data-income-refresh><input type="hidden" name="request_key" value="{{ sync_keys['held-etf-distributions'] }}">
+      <input type="hidden" name="month" value="{{ month }}">
+      <input type="hidden" name="filter" value="{{ scope.value }}">
+      <span class="income-sr-only" id="income-refresh-help">同步持有或追蹤中 ETF 的近期配息；首次或新增追蹤時會補齊缺漏年度，耗時可能較久。</span>
+      {{ sync_button('held-etf-distributions', '同步 ETF 配息', '同步持有或追蹤中 ETF 配息，並補齊缺漏年度', 'income-refresh-help') }}
+    </form>
+    <a href="{{ announcements_url }}" class="button secondary income-announcements">全部公告</a>
+  </div>
+</div>
+</section>
+<section class="income-data-region" aria-label="本月領息資料" style="--income-weeks: {{ overview.days|length // 7 }}">
+<div class="income-data-heading">
+  <button class="income-month-total" type="button" data-income-dialog="income-summary" aria-haspopup="dialog">
+    <span class="income-total-label">{{ "本月已知領息小計" if history_warnings else "本月預計領息" }}{% if overview.unknown_count %} <small>已知金額</small>{% endif %} <span class="income-total-info" aria-hidden="true">ⓘ</span></span>
+    <strong><span class="income-total-currency">NT$</span> {{ money(overview.gross) }}</strong>
+  </button>
+  <div class="income-summary-side">
+    <p class="income-total-meta"><span><strong>{{ overview.payment_day_count }}</strong> 個領息日</span><span><strong>{{ overview.count }}</strong> 筆配息</span></p>
+    <div class="income-quality-flags">
+      {% if overview.unknown_count %}<button type="button" data-income-dialog="income-summary">金額待確認 {{ overview.unknown_count }} 筆</button>{% endif %}
+      {% if overview.reconciliation_count %}<button type="button" data-income-dialog="income-summary">來源待覆核 {{ overview.reconciliation_count }} 筆</button>{% endif %}
+      {% if unscheduled %}<button type="button" data-income-dialog="income-unscheduled" aria-haspopup="dialog">日期待確認 {{ unscheduled|length }} 筆</button>{% endif %}
+    </div>
+  </div>
+</div>
+<noscript><p><a href="{{ announcements_url }}">以列表查看公告與領息明細</a></p></noscript>
+<section class="income-calendar" aria-label="{{ month_label }}股息發放月曆" data-market-calendar data-market-year="{{ market_calendar.year }}" data-market-month="{{ month }}">
+  <div class="income-weekdays" aria-hidden="true">
+    {% for name in ["日", "一", "二", "三", "四", "五", "六"] %}<span>{{ name }}</span>{% endfor %}
+  </div>
+  <div class="income-grid">
+    {% for day in overview.days %}
+      {% if not day.day %}
+      <div class="income-day income-day-blank" aria-hidden="true"></div>
+      {% elif day.entries %}
+      {% set payment_label %}{{ day.date }}，{{ day.count }} 筆配息{% if day.count == 1 %}，{{ day.entries[0].security_code }}{% endif %}，稅前 {{ money(day.gross) }} 元{% if day.unknown_count %}，另有金額待確認{% endif %}{% endset %}
+      <button type="button" class="income-day income-day-payment{% if day.market.closed %} income-day-closed{% endif %}{% if day.date == today %} income-day-today{% endif %}" data-market-day="{{ day.date }}" data-market-base-label="{{ payment_label }}" data-income-dialog="payments-{{ day.date }}" aria-haspopup="dialog" aria-label="{{ payment_label }}{% if day.market.description %}，{{ day.market.description }}{% endif %}">
+        <time datetime="{{ day.date }}" {% if day.date == today %}aria-current="date"{% endif %}><span class="income-date-number">{{ day.day }}</span>{% if day.date == today %}<small>今天</small>{% endif %}</time>
+        <span class="income-day-holiday" data-market-label title="{{ day.market.name }}"{% if not day.market.name %} hidden{% endif %}>{{ day.market.name }}</span>
+        <span class="income-day-card">
+          <strong class="income-day-amount" title="{{ money(day.gross) }} 元">{{ money(day.gross) }}</strong>
+          {% if day.count > 1 %}<small class="income-day-count">{{ day.count }} 筆配息</small>{% else %}<small class="income-day-code">{{ day.entries[0].security_code }}</small>{% endif %}
+          {% if day.unknown_count and day.gross is not none %}<span class="income-day-uncertain" aria-label="另有金額待確認">待確認</span>{% endif %}
+        </span>
+      </button>
+      {% else %}
+      <div class="income-day{% if day.market.closed %} income-day-closed{% endif %}{% if day.date == today %} income-day-today{% endif %}" data-market-day="{{ day.date }}">
+        <time datetime="{{ day.date }}" {% if day.date == today %}aria-current="date"{% endif %}><span class="income-date-number">{{ day.day }}</span>{% if day.date == today %}<small>今天</small>{% endif %}</time>
+        <span class="income-day-holiday" data-market-label title="{{ day.market.name }}"{% if not day.market.name %} hidden{% endif %}>{{ day.market.name }}</span>
+      </div>
+      {% endif %}
+    {% endfor %}
+  </div>
+</section>
+<div class="income-calendar-note">
+  {% if overview.count %}<span>點選領息日期查看明細{% if overview.unknown_count %} · {{ overview.unknown_count }} 筆金額待確認{% endif %}</span>
+  {% elif scope.kind != "all" %}<span>本月沒有符合此查看範圍的配息公告。<a href="{{ clear_filter_url }}">查看全部</a></span>
+  {% else %}<span>這個月還沒有資料。可切換月份，或<a href="/corporate-actions">同步公告</a>。</span>{% endif %}
+  <span>稅前試算，未核對銀行入帳。</span>
+</div>
+<div class="income-market-status" data-market-status role="status" aria-live="polite">
+  <span data-market-message>{{ market_calendar.annualMessage }} · {{ market_calendar.noticeMessage }}</span>
+  <span data-market-updated>{% if market_calendar.annualUpdatedAt or market_calendar.noticeUpdatedAt %}更新時間見休市說明{% endif %}</span>
+  <button type="button" class="income-market-retry" data-market-retry{% if not market_calendar.canRetry %} hidden{% endif %}>重試</button>
+</div>
+<details class="income-market-info">
+  <summary>休市說明與來源</summary>
+  <p>紅色日期標示週末或 TWSE 公告休市，未標色不代表已確認開市。配息依公告發放日顯示，未核對銀行入帳。</p>
+  <p>僅辨識明確全市場全日休市公告；未知格式與更正衝突列為待確認。</p>
+  <p data-market-times>年度表：{{ market_calendar.annualUpdatedAt|taipei_time if market_calendar.annualUpdatedAt else '尚未取得' }}；臨時公告：{{ market_calendar.noticeUpdatedAt|taipei_time if market_calendar.noticeUpdatedAt else '尚未取得' }}（台北時間）</p>
+  <ul data-market-sources>
+  {% for iso, event in market_calendar.events.items() %}{% if iso.startswith(month) %}<li><a href="{{ event.url }}" target="_blank" rel="noopener">{{ iso }} {{ event.name }}</a>{% if event.needsReview %}（待確認）{% endif %}</li>{% endif %}{% endfor %}
+  </ul>
+  <noscript><p>自動更新需要 JavaScript；目前顯示本機儲存的休市資料。</p></noscript>
+</details>
+</section>
+{% for day in overview.payment_days %}
+<dialog class="income-dialog" id="payments-{{ day.date }}" aria-labelledby="title-{{ day.date }}">
+  <div class="income-dialog-heading">
+    <div><h2 id="title-{{ day.date }}">{{ day.date[5:7] | int }} 月 {{ day.day }} 日領息</h2><p>{{ scope.description }}</p><p>預計 {{ money(day.gross) }} 元（稅前） · {{ day.count }} 筆{% if day.unknown_count %} · 金額尚未完整{% endif %}</p></div>
+    <form method="dialog"><button class="secondary" aria-label="關閉明細">×</button></form>
+  </div>
+  {% for e in day.entries %}{{ payment(e) }}{% endfor %}
+</dialog>
+{% endfor %}
+{% if unscheduled %}
+<dialog class="income-dialog" id="income-unscheduled" aria-labelledby="income-unscheduled-title">
+  <div class="income-dialog-heading"><div><h2 id="income-unscheduled-title">發放日期待確認</h2><p>{{ scope.description }}</p><p>{{ unscheduled | length }} 筆，未計入本月</p></div><form method="dialog"><button class="secondary" aria-label="關閉明細">×</button></form></div>
+  {% for e in unscheduled %}{{ payment(e) }}{% endfor %}
+</dialog>
+{% endif %}
+<dialog class="income-dialog" id="income-summary" aria-labelledby="income-summary-title">
+  <div class="income-dialog-heading"><h2 id="income-summary-title">{{ month_label }}領息摘要</h2><form method="dialog"><button class="secondary" aria-label="關閉摘要">×</button></form></div>
+  <div class="income-summary-content">
+    <p>{{ scope.description }}</p>
+    <dl class="income-summary-facts">
+      <div><dt>{{ "整月已知領息小計（不完整、稅前）" if history_warnings else "整月預計領息（稅前）" }}</dt><dd>NT$ {{ money(overview.gross) }}</dd></div>
+    </dl>
+    {% if overview.future_gross %}<p>其中 {{ money(overview.future_gross) }} 元依目前持股試算，除息日尚未到。</p>{% endif %}
+    {% if overview.unknown_count %}<p>另 {{ overview.unknown_count }} 筆金額待確認，尚未計入合計。</p>{% endif %}
+    {% if overview.reconciliation_count %}<p>另有 {{ overview.reconciliation_count }} 筆來源資料待覆核，未計入合計。</p>{% endif %}
+    <h3>金額怎麼算？</h3>
+    <p>依公告發放日統計整個月，包含今天之後的配息。發放日期未公告不混入月合計。</p>
+    <p>未除息或除息日尚未公告時，依目前持股不變試算；除息後依除息前一日持股計算權益，之後賣出仍保留。</p>
+    <p>領息銀行依目前設定，修改設定也會更新過去公告的銀行分類。</p>
+    <p>預計金額為稅前毛額，發放日經過不代表已入帳。領息不會改變持股成本。</p>
+  </div>
+</dialog>
+{% else %}
+<p class="inline-meta">稅前試算，未核對銀行入帳；權益已確定不代表已收到款項。</p>
+<div class="title-row income-all-toolbar"><h1>全部領息公告</h1>{{ scope_picker() }}<a href="{{ calendar_url }}" class="button secondary">回到月曆</a></div>
+{% include "_income_table.html" %}
+{% endif %}
+{% endblock %}

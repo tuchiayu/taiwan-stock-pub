@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% from "_actions.html" import create_link with context %}
+{% from "_trade_form.html" import trade_fields %}
+{% from "_pagination.html" import pagination %}
+{% from "_fields.html" import errors, invalid, error as field_error %}
+{% block title %}交易紀錄 - 台灣股市數據工具{% endblock %}
+{% block head %}
+<script src="/static/trade-fee-preview.js?v=5" defer></script>
+{% endblock %}
+{% block content %}
+<section class="workspace-controls" aria-label="交易操作"><div class="workspace-heading">
+  <h1>交易紀錄</h1>
+  <div class="actions page-actions" role="group" aria-label="頁面操作"><details class="workspace-tools" id="csv-tools"{% if error and request.url.path.startswith("/transactions/import") %} open{% endif %}>
+  <summary class="button secondary">匯入／匯出</summary>
+  <div class="workspace-tools-body workspace-tools-wide">
+  <form method="post" action="/transactions/import" enctype="multipart/form-data" class="toolbar-form">
+    <label>選擇交易 CSV<input type="file" name="file" accept=".csv" required></label>
+    <button type="submit" class="secondary">匯入 CSV</button>
+  </form>
+  <p class="subtitle">
+    <a href="{{ filtered_export_url }}">匯出符合條件的全部交易</a> · <a href="/transactions/export">匯出目前所有交易為 CSV</a>
+  </p>
+  <p class="subtitle">匯出檔含 trade_id，可在試算表整批修改後再匯入：有 trade_id 的列會修改對應交易，沒有的列會新增，跟既有交易完全相同的列會標為疑似重複；從其他資料庫匯出的檔案也能直接匯入，不需刪除任何欄位。CSV 不會刪除交易，檔案中沒有出現的交易維持原樣。</p>
+  <p class="subtitle">上傳後會先顯示預覽，確認才寫入，寫入前會自動備份資料庫。CSV 欄位：broker_account_name, security_code, market, event_type, trade_date, quantity, broker_account_id/unit_price/executed_amount/commission/transaction_tax/other_fees/is_day_trade/note/trade_id（選填）。有任何一列錯誤就整份不寫入，並標出是第幾列。</p>
+</div></details>
+{% if broker_accounts|length == 0 %}{{ create_link('#new-account', '新增券商帳戶') }}{% else %}{{ create_link(new_trade_url, '新增交易') }}{% endif %}</div>
+</div>
+
+  {{ errors(filter_errors, 'filter-') }}
+  <form method="get" action="/transactions" class="toolbar-form transaction-filters workspace-filterbar">
+    <label for="filter-q">商品代碼或名稱<input id="filter-q" name="q" type="search" value="{{ filters.q }}" placeholder="例如 0050、台積電"></label>
+    <label for="filter-broker_account_id">券商帳戶<select id="filter-broker_account_id" name="broker_account_id"{{ invalid('broker_account_id', filter_errors, 'filter-') }}><option value="">全部帳戶</option>{% for a in filter_accounts %}<option value="{{ a.id }}"{% if filters.broker_account_id == a.id %} selected{% endif %}>{{ a.name }}{% if a.status == 'disabled' %}（停用）{% endif %}</option>{% endfor %}</select>{{ field_error('broker_account_id', filter_errors, 'filter-') }}</label>
+    {% for key,label in [('date_from','開始日期'),('date_to','結束日期')] %}<label for="filter-{{ key }}">{{ label }}<input id="filter-{{ key }}" type="date" name="{{ key }}" value="{{ filters[key] }}"{{ invalid(key, filter_errors, 'filter-') }}>{{ field_error(key, filter_errors, 'filter-') }}</label>{% endfor %}
+    <label for="filter-event_type">交易類型<select id="filter-event_type" name="event_type"{{ invalid('event_type', filter_errors, 'filter-') }}><option value="">全部類型</option>{% for key,label in event_type_labels.items() %}<option value="{{ key }}"{% if filters.event_type == key %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>{{ field_error('event_type', filter_errors, 'filter-') }}</label>
+    <label>每頁筆數<select name="page_size">{% for size in [25,50,100] %}<option value="{{ size }}"{% if page_size == size %} selected{% endif %}>{{ size }} 筆</option>{% endfor %}</select></label>
+    <label class="checkbox-field"><input type="checkbox" name="include_voided" value="1"{% if filters.include_voided %} checked{% endif %}> 顯示已作廢</label>
+    <button type="submit" class="secondary">查詢</button><a href="/transactions">清除條件</a>
+  </form>
+  {% if filters.q or filters.broker_account_id or filters.date_from or filters.date_to or filters.event_type %}<p class="inline-meta">目前條件：{% if filters.q %}商品 {{ filters.q }} · {% endif %}{% for a in filter_accounts %}{% if a.id == filters.broker_account_id %}{{ a.name }} · {% endif %}{% endfor %}{{ filters.date_from or '不限開始日' }} ～ {{ filters.date_to or '不限結束日' }} · {{ event_type_labels.get(filters.event_type, '全部類型') }}</p>{% endif %}
+
+{% if broker_accounts|length == 0 %}
+<section class="section" id="new-account">
+  <p class="empty">還沒有券商帳戶，請先建立一個。</p>
+  <form method="post" action="/broker-accounts" class="toolbar-form">
+    {{ errors(field_errors, 'account-') }}
+    <label for="account-name">帳戶名稱<input id="account-name" name="name" value="{{ account_name }}" required{{ invalid('name', field_errors, 'account-') }}>{{ field_error('name', field_errors, 'account-') }}</label>
+    <button type="submit">建立券商帳戶</button>
+  </form>
+</section>
+{% elif (error and request.url.path == "/transactions") or request.query_params.get("new") == "1" %}
+<details class="page-tools workspace-entry" id="new-trade"{% if error and request.url.path == "/transactions" or request.query_params.get("new") == "1" %} open{% endif %}>
+  <summary>新增交易</summary>
+  <form method="post" action="/transactions" class="trade-form" data-trade-form>
+    <input type="hidden" name="return_to" value="{{ return_to }}">
+    {{ trade_fields(form_values, field_errors, broker_accounts, securities) }}
+    <div class="actions"><button type="submit">儲存交易</button><a href="{{ return_to }}">取消</a></div>
+  </form>
+</details>
+{% endif %}
+
+
+</section>
+
+{% if error %}
+<div class="notice error"><span aria-hidden="true">×</span><div>{{ error }}</div></div>
+{% endif %}
+{% if success %}<div class="notice success" role="status">{{ success }}</div>{% endif %}
+{% if prefill_notice %}<p class="notice" role="status">{{ prefill_notice }}</p>{% endif %}
+{% if import_success %}
+<div class="notice success"><span aria-hidden="true">✓</span><div>{{ import_success }}</div></div>
+{% endif %}
+
+<section class="panel workspace-data" id="history">
+  <div class="panel-heading workspace-data-heading"><h2>歷史交易</h2><small>符合 {{ total_results }} 筆 · 第 {{ page }}／{{ total_pages }} 頁</small></div>
+  <div class="table-wrap desktop-record-table" tabindex="0" role="region" aria-label="交易紀錄表格，可水平捲動">
+    <table class="transactions-table">
+      <thead>
+        <tr>
+          <th class="col-date">日期</th>
+          <th class="col-account">帳戶</th>
+          <th class="col-name">商品</th>
+          <th class="col-status">買賣</th>
+          <th class="col-number">股數</th>
+          <th class="col-number">單價</th>
+          <th class="col-number">手續費</th>
+          <th class="col-number">總金額</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for trade in transactions %}
+        <tr>
+          <th scope="row" class="col-date">{{ trade.trade_date }} <a href="{{ edit_url(trade.id) }}">編輯</a></th>
+          <td class="col-account">{{ trade.broker_account_name }}</td>
+          <td class="col-name">{{ trade.security_code }} {{ trade.security_name }}</td>
+          <td class="col-status">{{ event_type_labels[trade.event_type] }}{% if trade.voided_at %}（已作廢）{% endif %}</td>
+          <td class="col-number">{{ trade.quantity|number(0) }}</td>
+          <td class="col-number">{{ trade.unit_price|number }}</td>
+          <td class="col-number">{{ trade.commission|number }}</td>
+          <td class="col-number">{{ trade.total_amount|number(0) }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="8" class="empty">目前沒有符合條件的交易；可新增交易或清除查詢條件。</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <ul class="mobile-records" aria-label="歷史交易">
+    {% for trade in transactions %}
+    <li>
+      <div class="mobile-record-head"><strong>{{ trade.security_code }} {{ trade.security_name }}</strong><span>{{ event_type_labels[trade.event_type] }}{% if trade.voided_at %}（已作廢）{% endif %}</span></div>
+      <p class="inline-meta">{{ trade.trade_date }} · {{ trade.broker_account_name }}</p>
+      <div class="mobile-record-metrics"><span>股數 {{ trade.quantity|number(0) }}</span><strong>總金額 {{ trade.total_amount|number(0) }}</strong></div>
+      <details><summary>單價與費用</summary><dl><div><dt>單價</dt><dd>{{ trade.unit_price|number }}</dd></div><div><dt>手續費</dt><dd>{{ trade.commission|number }}</dd></div></dl></details>
+      <a href="{{ edit_url(trade.id) }}">編輯交易</a>
+    </li>
+    {% else %}<li class="empty">目前沒有符合條件的交易；可新增交易或清除查詢條件。</li>{% endfor %}
+  </ul>
+{{ pagination(page, total_pages, page_link, '交易分頁') }}
+</section>
+
+
+{% endblock %}

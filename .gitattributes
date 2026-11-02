@@ -1,0 +1,19 @@
+# Handle line endings automatically for all text files
+# This ensures that files are stored as LF in the repository, regardless of the OS
+* text=auto eol=lf
+
+# Mark binary files to prevent Git from attempting to normalize line endings
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.pdf binary
+*.dll binary
+*.exe binary
+*.so binary
+*.a binary
+*.lib binary
+*.zip binary
+*.tar.gz binary

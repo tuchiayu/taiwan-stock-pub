@@ -1,0 +1,163 @@
+/* Shared operation area / data area; colors come from app.css. */
+.workspace-controls {
+  flex: none;
+  position: relative;
+  padding: var(--space-1) 0 var(--space-2);
+  border: 0;
+  background: transparent;
+}
+.workspace-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: var(--space-4); flex-wrap: wrap; }
+.workspace-heading h1 { display: flex; align-items: center; gap: 9px; font-size: 22px; line-height: 1.4; }
+.workspace-controls .button, .workspace-controls button, .workspace-controls input, .workspace-controls select { min-height: 44px; font-size: 13px; }
+.workspace-controls .page-actions { gap: 8px; }
+.workspace-controls .page-actions .action-button { padding: 8px 12px; }
+.workspace-tools { position: relative; margin: 0; padding: 0; border: 0; background: transparent; }
+.workspace-tools > summary { padding: 8px 12px; }
+.workspace-tools-body { position: absolute; right: 0; top: calc(100% + 8px); z-index: 9; width: 420px; max-width: calc(100vw - 64px); max-height: 65vh; overflow: auto; padding: var(--space-5); border: 0; border-radius: var(--radius-card); background: var(--surface-raised); box-shadow: var(--shadow-popover); }
+.workspace-tools-body section + section { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+.workspace-tools-body h3 { font-size: 14px; margin-bottom: 8px; }
+.workspace-tools-body p, .workspace-tools-body li { font-size: 12px; color: var(--muted); }
+.workspace-tools-body p + p { margin-top: 8px; }
+.workspace-tools-body ul { margin: 8px 0 0; padding-left: 18px; }
+.workspace-tools-body .securities-support-content { padding: 0; margin: 0; border: 0; background: transparent; }
+.workspace-data { margin-top: var(--space-5); }
+.workspace-data-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px 20px; padding: 20px var(--space-5); flex-wrap: wrap; }
+.workspace-data-heading h2 { font-size: 17px; margin: 0; }
+.workspace-data-heading h2 span { font-size: 13px; font-weight: 400; }
+.workspace-data-heading p { color: var(--muted); font-size: 12px; }
+.workspace-data-heading .subtitle { max-width: 80ch; line-height: 1.7; }
+.workspace-data-heading p strong { color: var(--ink); }
+.workspace-heading > div { min-width: 0; }
+.workspace-heading h1 { min-width: 0; overflow-wrap: anywhere; }
+.workspace-heading:last-child { margin-bottom: 0; }
+.workspace-heading .inline-meta { margin-top: 4px; font-size: 12px; }
+.workspace-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 20px; }
+.workspace-toolbar:empty { display: none; }
+.workspace-toolbar .tabs { margin: 0; }
+.workspace-toolbar .tabs, .workspace-shortcuts { display: flex; flex-wrap: wrap; gap: 4px; }
+.workspace-toolbar .tabs { padding: var(--space-1); border: 0; border-radius: var(--radius-control); background: var(--surface-input); }
+.workspace-toolbar .tabs a { border: 0; border-radius: var(--radius-small); min-height: 40px; padding: 6px 12px; font-size: 13px; }
+.workspace-toolbar .tabs a[aria-current="page"] { background: var(--surface-selected); }
+/* Design 034: section shortcuts stay below the sticky site header and mark the current section. */
+:root:has([data-section-shortcuts]) { --section-shortcuts-height: 52px; scroll-padding-top: calc(var(--site-header-row-height) + 1px + var(--section-shortcuts-height)); }
+.workspace-shortcuts { position: sticky; top: calc(var(--site-header-row-height) + 1px); z-index: 10; flex-wrap: nowrap; gap: var(--space-1); margin-top: 12px; padding: var(--space-1) 0; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; border: 0; background: var(--canvas); }
+.workspace-shortcuts::-webkit-scrollbar { display: none; }
+.workspace-shortcuts a { display: inline-flex; flex: none; align-items: center; min-height: 44px; padding: 6px 12px; border-radius: var(--radius-small); color: var(--muted); font-size: 13px; text-decoration: none; white-space: nowrap; }
+.workspace-shortcuts a:hover { background: var(--surface-raised); color: var(--ink); }
+.workspace-shortcuts a[aria-current="location"] { background: var(--surface-selected); color: var(--ink); font-weight: 650; }
+.workspace-data > .notice { margin: 0 var(--space-5) var(--space-4); }
+.workspace-maintenance { margin: 0 var(--space-5) var(--space-5); }
+@media (max-height: 500px) {
+  :root:has([data-section-shortcuts]) { --section-shortcuts-height: 0px; }
+  .workspace-shortcuts { position: static; }
+}
+.workspace-related { margin-left: auto; font-size: 12px; }
+.workspace-filterbar { align-items: end; gap: 8px 10px; margin: 0; }
+.workspace-filterbar label { display: flex; flex-direction: column; gap: 4px; min-width: 0; font-size: 12px; color: var(--label); }
+.workspace-filterbar input, .workspace-filterbar select { width: 100%; min-width: 0; }
+.workspace-filterbar > a { display: inline-flex; align-items: center; min-height: 44px; font-size: 12px; }
+.workspace-controls .transaction-filters label { flex: 1 1 125px; }
+.workspace-controls .transaction-filters label:first-child { flex-basis: 180px; }
+.workspace-controls .transaction-filters label:nth-child(2) { flex-basis: 150px; }
+.workspace-controls .transaction-filters label:last-of-type { flex: 0 1 90px; }
+.workspace-entry, #new-action { margin-top: 14px; }
+.workspace-tools-wide { width: 620px; overflow-wrap: anywhere; }
+.workspace-tools-body input[type="file"] { max-width: 100%; }
+.workspace-tools-body .toolbar-form { align-items: end; }
+.workspace-tools-body label { min-width: 0; font-size: 12px; }
+.workspace-data-heading .inline-meta { font-size: 12px; }
+.workspace-detail > p, .workspace-detail > ul { margin: 0 var(--space-5) var(--space-4); font-size: 13px; overflow-wrap: anywhere; }
+.workspace-detail small { display: block; color: var(--muted); }
+.workspace-detail > .watch-settings-form { margin: 0 var(--space-5) var(--space-5); align-items: flex-end; }
+/* Design 051 §4.2.2: two yields side by side, the working folded away. */
+.yield-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--space-4); margin: 0 var(--space-5) var(--space-4); }
+.yield-stat { padding: 14px 16px; border-radius: var(--radius-control); background: var(--surface-subtle); }
+.yield-stat .stat-label { margin: 0; font-size: 13px; font-weight: 400; color: var(--muted); }
+.yield-stat .stat-label[title] { cursor: help; }
+.yield-value { margin: 4px 0; font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.yield-stat .stat-note { margin: 2px 0 0; font-size: 12px; color: var(--muted); }
+.yield-details { margin: 0 var(--space-5) var(--space-4); font-size: 13px; }
+.yield-details > p { margin: 8px 0; color: var(--muted); }
+.yield-detail-table { width: auto; min-width: 0; }
+/* Design 050 §4.2.3: distributions before the first acquisition stay for comparison, muted. */
+.distribution-table tr.before-acquired > td { color: var(--muted); }
+.watch-settings-form label { display: grid; gap: 6px; font-size: 13px; }
+.watch-settings-form input[name="note"] { min-width: min(24rem, 100%); }
+.workspace-empty { padding: 0 var(--space-5) var(--space-5); color: var(--muted); font-size: 13px; }
+.workspace-result > p + p { margin-top: 10px; }
+.workspace-state { font-size: 22px; font-weight: 650; }
+.workspace-state span { color: var(--brand-strong); }
+.workspace-report-status { padding: 0 16px 14px; }
+.workspace-data > .pagination { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+.pagination > a, .pagination > [aria-disabled] { display: inline-flex; align-items: center; justify-content: center; min-height: 36px; padding: 6px 10px; border: 1px solid transparent; border-radius: var(--radius-small); text-decoration: none; white-space: nowrap; }
+.pagination > [aria-disabled] { background: var(--surface-input); }
+.pagination > [aria-disabled] { color: var(--muted); opacity: .5; }
+.pagination > .page-position { margin-inline: 8px; white-space: nowrap; }
+.corporate-review .panel > .pagination { margin: 16px -16px -16px; }
+@media (max-width: 767px) {
+  .workspace-data > .pagination { padding-inline: 4px; }
+  .pagination > .page-position { order: -1; flex-basis: 100%; margin: 0 0 4px; text-align: center; }
+  .pagination > a, .pagination > [aria-disabled] { flex: 1 1 0; min-height: 44px; padding-inline: 4px; }
+}
+.workspace-key-values table { min-width: 0; }
+.workspace-key-values td { overflow-wrap: anywhere; }
+.workspace-preferences { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); max-width: none; gap: 16px; align-items: start; }
+.workspace-preferences > input[type="hidden"] { display: none; }
+.workspace-preferences > .error-summary { grid-column: 1 / -1; }
+.workspace-preferences input { width: 100%; min-width: 0; }
+.workspace-preferences button { align-self: end; justify-self: start; }
+#accounts .form-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+#accounts .account-form:first-child { padding-top: 0; }
+[id] { scroll-margin-top: 16px; }
+.securities-query-row { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 10px 14px; }
+.securities-query-row > .tabs { margin: 20px 0 0; gap: 0; padding: var(--space-1); border: 0; border-radius: var(--radius-control); background: var(--surface-input); flex: none; }
+.securities-query-row .tabs a { display: flex; align-items: center; justify-content: center; border-radius: var(--radius-small); border: 0; min-height: 40px; padding: 5px 12px; font-size: 13px; }
+.securities-query-row .tabs a[aria-current="page"] { background: var(--surface-selected); color: var(--ink); }
+.securities-controls .securities-filters { flex: 1 1 560px; gap: 8px; margin: 0; }
+.securities-controls .securities-filters > label { font-size: 12px; gap: 4px; color: var(--label); }
+.securities-controls .securities-filters > label:first-of-type { flex: 1 1 170px; }
+.securities-controls .securities-filters input[type="search"] { width: 100%; }
+.securities-controls .securities-filters select[name="market"] { width: 160px; }
+/* Same box as 更多篩選's summary, so both sit on the button's line (#163). */
+.securities-controls .securities-filters > a { display: flex; align-items: center; min-height: 44px; color: var(--brand-strong); font-size: 13px; white-space: nowrap; }
+.securities-controls .advanced-filters > summary { padding-inline: 6px; }
+.securities-controls .active-filters { margin-top: 12px; }
+.securities-panel .securities-table th, .securities-panel .securities-table td { padding-block: 12px; }
+.securities-panel .securities-table small { line-height: 1.4; margin-top: 3px; }
+.securities-panel .securities-table td button { font-size: 12px; min-height: 36px; padding: 5px 10px; }
+@media (max-width: 1100px) {
+  .securities-query-row > .tabs { margin-top: 0; }
+}
+@media (max-width: 767px) {
+  .workspace-controls { padding: 0 0 var(--space-2); }
+  .workspace-heading { margin-bottom: 10px; }
+  .workspace-heading h1 { font-size: 20px; }
+  .workspace-heading .page-actions { margin-left: auto; }
+  .workspace-controls .page-actions .action-button { font-size: 12px; padding-inline: 8px; }
+  .workspace-tools > summary { font-size: 12px; padding-inline: 8px; }
+  .securities-query-row { gap: 10px 8px; }
+  .securities-query-row > .tabs { flex: 1; }
+  .securities-query-row .tabs a { flex: 1; padding-inline: 8px; font-size: 12px; }
+  .securities-controls .securities-filters { flex-basis: 100%; }
+  .securities-controls .securities-filters > label:first-of-type { flex-basis: 100%; }
+  .securities-controls .securities-filters > label:nth-of-type(2) { flex: 1; }
+  .securities-controls .securities-filters select[name="market"] { width: 100%; }
+  .workspace-data-heading { padding: var(--space-4); }
+  .workspace-data > .notice { margin-inline: var(--space-4); }
+  .workspace-maintenance { margin-inline: var(--space-4); }
+  .workspace-data-heading.panel-heading { flex-direction: row; align-items: center; }
+  .workspace-filterbar { gap: 10px 8px; }
+  .workspace-filterbar > label { flex: 1 1 140px; }
+  .workspace-controls .transaction-filters label:last-of-type { flex: 1 1 100px; }
+  .workspace-filterbar input, .workspace-filterbar select { font-size: 16px; }
+  .workspace-toolbar .tabs { width: 100%; }
+  .workspace-toolbar .tabs a { flex: 1; text-align: center; }
+  .workspace-related { margin-left: 0; }
+  .workspace-preferences, #accounts .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .workspace-tools[open] { width: 100%; flex-basis: 100%; }
+  .workspace-tools-body { position: static; width: 100%; max-width: none; margin-top: 8px; max-height: 60vh; padding: var(--space-4); }
+  .workspace-heading .page-actions:has(.workspace-tools[open]) { width: 100%; }
+}
+@media (max-width: 480px) {
+  .workspace-preferences, #accounts .form-grid { grid-template-columns: minmax(0, 1fr); }
+}

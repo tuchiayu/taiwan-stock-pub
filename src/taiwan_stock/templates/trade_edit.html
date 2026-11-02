@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% from "_trade_form.html" import trade_fields %}
+{% block title %}編輯交易 - 台灣股市數據工具{% endblock %}
+{% block head %}<script src="/static/trade-fee-preview.js?v=5" defer></script>{% endblock %}
+{% block content %}
+<section class="workspace-controls" aria-label="編輯交易操作"><div class="workspace-heading"><h1>編輯交易</h1><a class="button secondary" href="{{ return_to }}">返回交易紀錄</a></div><p class="inline-meta">更正交易內容後，按「儲存更正」更新持股計算。</p></section>
+{% if error %}<p class="notice error" role="alert">{{ error }}</p>{% endif %}
+{% if trade.voided_at %}
+<section class="panel workspace-data"><div class="workspace-data-heading"><h2>已作廢</h2></div><div class="panel-body">
+<p class="notice">這筆交易已作廢，不計入持股、成本、配息與損益。若要更正內容，請先取消作廢。</p>
+<form method="post" action="/transactions/{{ trade.id }}/unvoid"><input type="hidden" name="return_to" value="{{ return_to }}"><div class="actions"><button type="submit">取消作廢</button><a href="{{ return_to }}">返回</a></div></form>
+</div></section>
+{% else %}
+<section class="panel workspace-data"><div class="workspace-data-heading"><h2>交易內容</h2></div><div class="panel-body">
+<form method="post" class="trade-form" data-trade-form>
+<input type="hidden" name="return_to" value="{{ return_to }}">
+{{ trade_fields(form_values, field_errors, editing=true, trade=trade) }}
+<div class="actions"><button type="submit">儲存更正</button><a href="{{ return_to }}">取消</a></div>
+</form></div></section>
+<section class="panel workspace-data"><div class="workspace-data-heading"><h2>作廢交易</h2></div><div class="panel-body">
+<p class="inline-meta">記錯帳戶、商品或重複輸入時使用。作廢後資料仍保留，可隨時取消作廢。</p>
+<form method="post" action="/transactions/{{ trade.id }}/void" onsubmit="return confirm('確定要作廢這筆交易嗎？作廢後不再計入持股與成本。')"><input type="hidden" name="return_to" value="{{ return_to }}"><div class="actions"><button type="submit" class="secondary">作廢這筆交易</button></div></form>
+</div></section>
+{% endif %}
+{% endblock %}
