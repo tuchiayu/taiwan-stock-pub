@@ -13,7 +13,11 @@ import uvicorn
 from taiwan_stock.catalog import investment_trust_adapters as trust_adapters
 from taiwan_stock.catalog import sync_history
 from taiwan_stock.infrastructure import backup, migrate, sync_jobs
-from taiwan_stock.infrastructure.db import get_connection, resolve_data_dir
+from taiwan_stock.infrastructure.db import (
+    dev_data_dir,
+    get_connection,
+    resolve_data_dir,
+)
 from taiwan_stock.main import create_app
 from taiwan_stock.shared.http import new_client as new_client
 from taiwan_stock.shared.ids import new_id
@@ -191,7 +195,9 @@ def run_web(args: argparse.Namespace) -> None:
     if not args.no_browser:
         threading.Timer(0.8, lambda: webbrowser.open(url)).start()
 
-    print(f"Starting Taiwan Stock at {url} (data: {data_dir})")
+    # Design 077: say so when this is the source tree's development data.
+    label = "，開發資料" if Path(data_dir).resolve() == dev_data_dir() else ""
+    print(f"Starting Taiwan Stock at {url} (data: {data_dir}{label})")
     if args.host.strip("[]").lower() not in LOCAL_HOSTS:
         # There is no login: the Host check only stops browsers, not a
         # client that sends "Host: localhost" itself (design 030).

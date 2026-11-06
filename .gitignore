@@ -21,6 +21,9 @@ Thumbs.db
 *.db-shm
 *.sqlite
 *.sqlite3
+# Development data from the source tree (design 077); only its README is tracked.
+dev-data/*
+!dev-data/README.md
 
 # Logs
 *.log

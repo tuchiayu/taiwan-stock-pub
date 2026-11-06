@@ -376,6 +376,8 @@ def test_homepage_shows_sync_flash_messages(tmp_path):
         response = client.get("/?prices_synced=15")
         assert response.status_code == 200
         assert "已同步 TWSE／TPEx 最新股價（共 15 筆）" in response.text
+        # Design 078: a market-wide count is shown with thousands separators.
+        assert "（共 2,394 筆）" in client.get("/?prices_synced=2394").text
 
         err_response = client.get("/?sync_error=網路連線失敗")
         assert err_response.status_code == 200

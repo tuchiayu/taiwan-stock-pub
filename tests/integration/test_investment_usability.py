@@ -85,6 +85,42 @@ def test_create_and_edit_preserve_every_attempted_value(client):
         )
 
 
+def test_grouped_numbers_save_plain_on_create_and_edit(client):
+    """Design 078 §4.2.4: thousands separators never reach storage."""
+    grouped = fields(
+        quantity="2,000",
+        unit_price="1,234.5",
+        commission="3,518",
+        other_fees="1,000",
+    )
+    created = client.post("/transactions", data=grouped, follow_redirects=False)
+    assert created.status_code == 303
+    with closing(get_connection(client.app.state.data_dir)) as conn:
+        trade_id, quantity, price, commission, other = conn.execute(
+            "SELECT id, quantity, unit_price, commission, other_fees FROM trades"
+        ).fetchone()
+    assert (quantity, price, commission, other) == (2000, "1234.5", "3518", "1000")
+
+    edited = client.post(
+        f"/transactions/{trade_id}/edit",
+        data=fields(quantity="20,000", unit_price="34.2", executed_amount="684,000"),
+        follow_redirects=False,
+    )
+    assert edited.status_code == 303
+    with closing(get_connection(client.app.state.data_dir)) as conn:
+        row = conn.execute(
+            "SELECT quantity, executed_amount FROM trades WHERE id=?", (trade_id,)
+        ).fetchone()
+    assert (row[0], row[1]) == (20000, "684000")
+
+    page = client.get(f"/transactions/{trade_id}/edit").text
+    quantity_input = next(
+        line for line in page.split("<input") if 'id="trade-quantity"' in line
+    )
+    assert 'type="number"' not in quantity_input
+    assert 'inputmode="numeric"' in quantity_input
+
+
 @pytest.mark.parametrize(
     "changes,key",
     [

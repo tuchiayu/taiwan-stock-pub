@@ -258,7 +258,8 @@ def test_holding_detail_notes_original_quantity_after_a_split(tmp_path):
 
     # The recorded price stays unadjusted; the split shows on the quantity.
     assert re.search(
-        r"取得日 2026-08-01（[\d,]+ 天），成交價 1,000\.00，股數 2000\S*（原 1000\S*）",
+        r"取得日 2026-08-01（[\d,]+ 天），成交價 1,000\.00，"
+        r"股數 2,000\S*（原 1,000\S*）",
         html,
     )
 

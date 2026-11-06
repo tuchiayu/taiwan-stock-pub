@@ -84,12 +84,13 @@ def test_catalog_first_then_profiles_and_distributions_fetch_together(conn, phas
     assert "changed_fields" in result["etf_profiles"]
 
 
-def test_december_also_fetches_next_year(conn, phases, monkeypatch):
+def test_december_no_longer_fetches_next_year(conn, phases, monkeypatch):
+    """Design 076: next January's ex-dates are in this year's list."""
     monkeypatch.setattr(operations, "today_taipei", lambda: "2026-12-05")
 
     operations.execute(conn, None, "etf-data", {})
 
-    assert ("start", "twse", [2026, 2027]) in phases
+    assert ("start", "twse", [2026]) in phases
 
 
 def test_a_failed_phase_does_not_stop_the_next(conn, phases, monkeypatch):

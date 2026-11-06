@@ -101,11 +101,25 @@ def _profile_result(conn, previous, result, basic):
     }
 
 
-def _distribution_years():
-    """Every listed ETF's current year (and next, in December): enough for
-    下次配息; older years stay with the CLI and design 050's backfill."""
+def _distribution_plans(base_years, *, include_previous=False):
+    """Design 076 §4.2.4: per market, `(year_list, year_map)` for the base
+    years plus the previous year where `year_plan` needs it."""
+
+    def plan(conn, market):
+        year_map = sync_etf_distributions.year_plan(
+            conn, market, base_years, include_previous=include_previous
+        )
+        return sorted(set(base_years).union(*year_map.values())), year_map
+
+    return plan
+
+
+def _etf_data_plan():
+    """Every listed ETF's current year: enough for 下次配息 (design 052);
+    older years stay with the CLI and design 050's backfill. Design 076:
+    January, or a year never confirmed, also asks last year."""
     today = date.fromisoformat(today_taipei())
-    return [today.year] + ([today.year + 1] if today.month == 12 else [])
+    return _distribution_plans([today.year], include_previous=today.month == 1)
 
 
 def _has_errors(value):
@@ -363,14 +377,19 @@ def execute(conn, client, operation, options):
         )
     if operation == "full-etf-distributions":
         result = {}
-        for name, loader in (
-            ("twse", sync_etf_distributions.sync_etf_distributions),
-            ("tpex", sync_etf_distributions.sync_tpex_etf_distributions),
+        reference = options.get("reference_year") or int(today_taipei()[:4])
+        span = options.get("years", 3)
+        plan = _distribution_plans(range(reference - span + 1, reference + 1))
+        for name, market, loader in (
+            ("twse", "TWSE", sync_etf_distributions.sync_etf_distributions),
+            ("tpex", "TPEx", sync_etf_distributions.sync_tpex_etf_distributions),
         ):
-            result[name] = do(
-                f"{name.upper()} ETF 配息",
-                lambda loader=loader: loader(conn, client, **options),
-            )
+
+            def run(loader=loader, market=market):
+                year_list, year_map = plan(conn, market)
+                return loader(conn, client, year_list=year_list, year_map=year_map)
+
+            result[name] = do(f"{name.upper()} ETF 配息", run)
         backfill = _annual_history_backfill_scope(conn)
         for market, loader in (
             ("TWSE", sync_etf_distributions.sync_etf_distributions),
@@ -417,7 +436,9 @@ def execute(conn, client, operation, options):
         # market's distributions fetch at once; they are written in the old
         # order (basic data, issuers, TWSE, TPEx).
         previous = _profile_snapshot(conn)
-        years = _distribution_years()
+        plan = _etf_data_plan()
+        plans = {market: plan(conn, market) for market in ("TWSE", "TPEx")}
+        years = sorted(set().union(*(year_list for year_list, _ in plans.values())))
         done = parallel_steps(
             conn,
             [
@@ -437,7 +458,11 @@ def execute(conn, client, operation, options):
                         f"{market} ETF 配息",
                         lambda market=market: (
                             sync_etf_distributions.etf_distribution_steps(
-                                conn, client, market, year_list=years
+                                conn,
+                                client,
+                                market,
+                                year_list=plans[market][0],
+                                year_map=plans[market][1],
                             )
                         ),
                     )

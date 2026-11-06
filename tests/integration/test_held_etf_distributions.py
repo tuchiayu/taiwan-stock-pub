@@ -322,13 +322,41 @@ def test_vanished_ex_date_is_flagged_for_review(conn):
     assert row["reconciliation_status"] == "needs_review"
 
 
-def test_december_also_requests_next_year(conn):
+def test_december_no_longer_requests_next_year(conn):
+    """Design 076: next January's ex-dates are in this year's list."""
     sources = FakeSources()
 
     outcome = _run(conn, sources, today="2026-12-10")
 
-    assert outcome["twse"]["years"] == [2024, 2025, 2026, 2027]
+    assert outcome["twse"]["years"] == [2024, 2025, 2026]
+    assert not any(year == "2027" for _, _, year in sources.requests)
+
+
+def test_january_asks_last_year_even_when_it_is_covered(conn):
+    _run(conn, FakeSources(), today="2026-09-30")  # 2024-2026 all confirmed
+    conn.execute("UPDATE distributions SET amount_status='final'")
+    sources = FakeSources()
+
+    _run(conn, sources, today="2027-01-05")
+
+    assert ("TWSE", "00919", "2026") in sources.requests
     assert ("TWSE", "00919", "2027") in sources.requests
+
+
+def test_pending_january_amount_also_asks_the_previous_year(conn):
+    _run(conn, FakeSources())
+    conn.execute(
+        "INSERT INTO distributions (id, security_id, ex_dividend_date, "
+        "amount_status, source) VALUES ('d-jan', 'e-00679B', '2026-01-02', "
+        "'unknown', 'tpex_etf_distribution_list')"
+    )
+    sources = FakeSources()
+    sources.events["00679B"].append(("2026-01-02", "2026-01-28", "0.05"))
+
+    _run(conn, sources)
+
+    assert ("TPEx", "00679B", "2025") in sources.requests
+    assert _amounts(conn)[("e-00679B", "2026-01-02")] == ("0.0500", "final")
 
 
 def test_january_also_requests_last_year_with_unknown_amount(conn):

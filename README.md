@@ -55,7 +55,7 @@ taiwan-stock web --no-browser     # 不自動開瀏覽器
 taiwan-stock web --port 8080      # 換用其他 port
 ```
 
-`/health` 為健康檢查端點。資料庫預設存放在 `%LOCALAPPDATA%\TaiwanStock\data`（Windows）或 `~/.local/share/taiwan-stock`（macOS / Linux），可用環境變數 `TSL_DATA_DIR` 或 `--data-dir <路徑>` 指定其他位置。資料庫不會進入 Git。
+`/health` 為健康檢查端點。以 `pip install .`、`pipx` 或 `uv tool` 安裝時，資料庫存放在 `%LOCALAPPDATA%\TaiwanStock\data`（Windows）或 `~/.local/share/taiwan-stock`（macOS / Linux）。clone 後從原始碼執行（`pip install -e .`）時，改用專案內的 `dev-data/`，啟動訊息會標示「開發資料」，開發時不會動到安裝版的資料；放入正式資料複本的方式見 [dev-data/README.md](dev-data/README.md)。兩者都可用環境變數 `TSL_DATA_DIR` 或 `--data-dir <路徑>` 指定其他位置。資料庫不會進入 Git。
 
 本程式沒有登入機制，只適合在本機使用。若以 `--host` 指定 `0.0.0.0` 或區網 IP，可連到該位址的裝置都能讀取與修改投資資料，啟動時也會印出警告。
 

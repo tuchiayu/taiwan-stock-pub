@@ -251,18 +251,20 @@ def edit_trade_form(
     conn=Depends(get_db),
 ):
     context = _edit_context(conn, trade_id)
-    values = {
-        "event_type": event_type,
-        "trade_date": trade_date,
-        "quantity": quantity,
-        "unit_price": unit_price,
-        "executed_amount": executed_amount,
-        "commission": commission,
-        "transaction_tax": transaction_tax,
-        "other_fees": other_fees,
-        "is_day_trade": is_day_trade,
-        "note": note,
-    }
+    values = trade_forms.ungroup(
+        {
+            "event_type": event_type,
+            "trade_date": trade_date,
+            "quantity": quantity,
+            "unit_price": unit_price,
+            "executed_amount": executed_amount,
+            "commission": commission,
+            "transaction_tax": transaction_tax,
+            "other_fees": other_fees,
+            "is_day_trade": is_day_trade,
+            "note": note,
+        }
+    )
     errors = trade_forms.validate(values)
     if not errors:
         try:

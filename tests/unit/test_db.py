@@ -34,8 +34,51 @@ def test_env_var_wins_when_no_cli_path(monkeypatch, tmp_path):
     assert resolved == (tmp_path / "from-env").resolve()
 
 
+@pytest.fixture
+def installed(monkeypatch, tmp_path):
+    """Design 077: an installed copy has no `dev-data/README.md` beside it."""
+    monkeypatch.setattr(db, "_PROJECT_ROOT", tmp_path / "site-packages")
+    monkeypatch.delenv(db.ENV_VAR, raising=False)
+
+
+@pytest.fixture
+def source_tree(monkeypatch, tmp_path):
+    """Design 077: a source checkout, whose root carries the marker."""
+    root = tmp_path / "checkout"
+    (root / "dev-data").mkdir(parents=True)
+    (root / "dev-data" / "README.md").write_text("marker\n", encoding="utf-8")
+    monkeypatch.setattr(db, "_PROJECT_ROOT", root)
+    monkeypatch.delenv(db.ENV_VAR, raising=False)
+    return root
+
+
+def test_source_tree_defaults_to_its_dev_data(source_tree):
+    assert db.dev_data_dir() == source_tree / "dev-data"
+    assert db.resolve_data_dir(None) == source_tree / "dev-data"
+
+
+def test_env_var_and_cli_path_still_win_over_dev_data(
+    source_tree, monkeypatch, tmp_path
+):
+    monkeypatch.setenv(db.ENV_VAR, str(tmp_path / "from-env"))
+    assert db.resolve_data_dir(None) == (tmp_path / "from-env").resolve()
+    assert db.resolve_data_dir(tmp_path / "cli") == (tmp_path / "cli").resolve()
+
+
+def test_a_dev_data_folder_without_the_marker_is_not_used(installed, tmp_path):
+    (tmp_path / "site-packages" / "dev-data").mkdir(parents=True)
+
+    assert db.dev_data_dir() is None
+    assert db.resolve_data_dir(None) == db._default_data_dir()
+
+
+def test_this_checkout_carries_the_marker():
+    """Design 079: every source checkout, public export included, has it."""
+    assert db.dev_data_dir() == db._PROJECT_ROOT / "dev-data"
+
+
 @pytest.mark.skipif(sys.platform != "win32", reason="constructs a real WindowsPath")
-def test_windows_default_uses_local_app_data(monkeypatch):
+def test_windows_default_uses_local_app_data(monkeypatch, installed):
     monkeypatch.delenv(db.ENV_VAR, raising=False)
     monkeypatch.setenv("LOCALAPPDATA", r"C:\Users\tester\AppData\Local")
 
@@ -45,7 +88,7 @@ def test_windows_default_uses_local_app_data(monkeypatch):
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="constructs a real PosixPath")
-def test_posix_default_uses_xdg_data_home(monkeypatch):
+def test_posix_default_uses_xdg_data_home(monkeypatch, installed):
     monkeypatch.delenv(db.ENV_VAR, raising=False)
     monkeypatch.setenv("XDG_DATA_HOME", "/home/tester/.local/share")
 

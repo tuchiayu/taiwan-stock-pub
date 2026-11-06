@@ -110,7 +110,7 @@
     {% if query or market or industry or pay_month or custodian_bank or distribution_frequency %}<div class="active-filters" aria-label="已套用條件"><strong>目前條件</strong>
       {% if query %}<span>關鍵字：{{ query }}</span>{% endif %}{% if market %}<span>市場：{{ market }}</span>{% endif %}{% if industry %}<span>產業：{{ industry|industry_filter_label }}</span>{% endif %}{% if pay_month %}<span>發放月份：{{ pay_month }}</span>{% endif %}{% if custodian_bank %}<span>保管銀行：{{ {'unknown': '資料不足', 'delisted': '已下市'}.get(custodian_bank, custodian_bank) }}</span>{% endif %}{% if distribution_frequency %}<span>配息頻率：{{ distribution_frequency_labels[distribution_frequency] }}</span>{% endif %}<a href="{{ clear_url }}">清除條件</a></div>{% endif %}
 </section>
-{% if synced is not none %}<div class="notice success">商品名單同步完成，共 {{ synced }} 檔。{% if not status_error %}上市／上櫃狀態已核對官方資料。{% endif %}</div>{% endif %}
+{% if synced is not none %}<div class="notice success">商品名單同步完成，共 {{ synced|number(0) }} 檔。{% if not status_error %}上市／上櫃狀態已核對官方資料。{% endif %}</div>{% endif %}
 {% if status_error %}<div class="notice error">商品名單已更新；上市／上櫃狀態同步未全部完成：{{ status_error }}。請查看最近同步紀錄。</div>{% endif %}
 {% if sync_error %}<div class="notice error">同步失敗：{{ sync_error }}</div>{% endif %}
 {% if watchlist_added %}<div class="notice success">已加入追蹤清單。</div>{% endif %}

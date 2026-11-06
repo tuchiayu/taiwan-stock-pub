@@ -18,6 +18,10 @@ from taiwan_stock.shared.dates import business_date_scope
 DB_FILENAME = "taiwan_stock.db"
 ENV_VAR = "TSL_DATA_DIR"
 _COORDINATION_FILENAME = ".connection_lease.db"
+# Designs 077/079: a source checkout's project root (src/taiwan_stock/
+# infrastructure/ → three levels up) and the marker the repository commits.
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+DEV_DATA_MARKER = Path("dev-data") / "README.md"
 
 
 @contextmanager
@@ -83,7 +87,15 @@ def resolve_data_dir(cli_data_dir: str | Path | None = None) -> Path:
     if env_value:
         return Path(env_value).expanduser().resolve()
 
-    return _default_data_dir()
+    return dev_data_dir() or _default_data_dir()
+
+
+def dev_data_dir() -> Path | None:
+    """Designs 077/079: running from a source checkout uses its `dev-data/`,
+    so development never touches the installed program's data. An installed
+    copy (site-packages) has no marker there."""
+    marker = _PROJECT_ROOT / DEV_DATA_MARKER
+    return marker.parent if marker.is_file() else None
 
 
 def _default_data_dir() -> Path:

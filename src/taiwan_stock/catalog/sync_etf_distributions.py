@@ -103,6 +103,83 @@ def _etf_distribution_change(
     )
 
 
+def in_query_year(ex_date: str, year: int) -> bool:
+    """Design 076: the sources file an early-January ex-date (announced in
+    December) under the previous year, so a `year` unit may also return
+    next January's dates (verified live 2026-11-05)."""
+    return ex_date.startswith(f"{year}-") or ex_date.startswith(f"{year + 1}-01-")
+
+
+def query_years(ex_date: str) -> set[int]:
+    """The years whose query can return `ex_date`: its own, plus the
+    previous one for a January date (design 076)."""
+    year = int(ex_date[:4])
+    return {year, year - 1} if ex_date[5:7] == "01" else {year}
+
+
+def year_plan(
+    conn: sqlite3.Connection,
+    market: str,
+    base_years,
+    *,
+    include_previous: bool = False,
+) -> dict[str, set[int]]:
+    """Design 076 §4.2.4: `{security_id: years}` for a market's ETFs — the
+    base years, plus the year before the earliest when it was never
+    confirmed (a new database), when `include_previous` (January), or for
+    a January row flagged for review, so its earlier query can confirm
+    it again. Delisted ETFs keep the base years (their units are skipped)."""
+    base = set(base_years)
+    previous = min(base) - 1
+    coverage = sync_history.latest_units(conn)
+    reviews = defaultdict(set)
+    for row in conn.execute(
+        "SELECT security_id, ex_dividend_date FROM distributions "
+        "WHERE reconciliation_status = 'needs_review' "
+        "AND substr(ex_dividend_date, 6, 2) = '01'"
+    ):
+        year = int(row["ex_dividend_date"][:4])
+        if year in base:
+            reviews[row["security_id"]].add(year - 1)
+    plan = {}
+    for etf in conn.execute(
+        "SELECT id, status FROM securities WHERE market=? AND security_type='etf'",
+        (market,),
+    ):
+        years = set(base)
+        if etf["status"] != "delisted":
+            if include_previous or not sync_history.years_covered(
+                coverage, etf["id"], market, [previous]
+            ):
+                years.add(previous)
+            years |= reviews[etf["id"]]
+        plan[etf["id"]] = years
+    return plan
+
+
+def _flag_missing(conn, security_id, source, where, params, returned, note, at):
+    """Flag stored, unflagged rows matching `where` that the source no
+    longer returned; already-flagged rows are left alone."""
+    for row in conn.execute(
+        "SELECT id, ex_dividend_date FROM distributions "
+        "WHERE security_id = ? AND source = ? AND reconciliation_status IS NULL "
+        f"AND {where}",
+        (security_id, source, *params),
+    ).fetchall():
+        if row["ex_dividend_date"] in returned:
+            continue
+        conn.execute(
+            """
+            UPDATE distributions SET
+                reconciliation_status = 'needs_review',
+                reconciliation_note = ?,
+                reconciliation_detected_at = ?
+            WHERE id = ?
+            """,
+            (note, at, row["id"]),
+        )
+
+
 def _flag_stale_etf_distributions(
     conn: sqlite3.Connection,
     security_id: str,
@@ -118,35 +195,35 @@ def _flag_stale_etf_distributions(
     corrected to a different date or genuinely dropped — flag it for
     manual review rather than guessing at a replacement. The unit is
     always queried one full year at a time, so a caller reaching this
-    function has a response already trusted as complete for `year`;
-    already-flagged rows are left alone rather than re-flagged.
-    """
-    stale_rows = conn.execute(
-        """
-        SELECT id, ex_dividend_date FROM distributions
-        WHERE security_id = ? AND source = ?
-          AND ex_dividend_date LIKE ?
-          AND reconciliation_status IS NULL
-        """,
-        (security_id, source, f"{year}-%"),
-    ).fetchall()
-    for row in stale_rows:
-        if row["ex_dividend_date"] in returned_dates:
-            continue
-        conn.execute(
-            """
-            UPDATE distributions SET
-                reconciliation_status = 'needs_review',
-                reconciliation_note = ?,
-                reconciliation_detected_at = ?
-            WHERE id = ?
-            """,
-            (
-                f"{year} 年度重新同步時，此除息日未再出現於來源回應",
-                detected_at,
-                row["id"],
-            ),
-        )
+    function has a response already trusted as complete for `year`.
+
+    Design 076: January dates may come from the previous year's query
+    instead, so they are left to `_flag_stale_january`."""
+    _flag_missing(
+        conn,
+        security_id,
+        source,
+        "ex_dividend_date LIKE ? AND substr(ex_dividend_date, 6, 2) <> '01'",
+        (f"{year}-%",),
+        returned_dates,
+        f"{year} 年度重新同步時，此除息日未再出現於來源回應",
+        detected_at,
+    )
+
+
+def _flag_stale_january(conn, security_id, source, year, returned_dates, detected_at):
+    """Design 076 §4.2.3: a January date is gone only when both queries
+    that can return it (`year - 1` and `year`) succeeded without it."""
+    _flag_missing(
+        conn,
+        security_id,
+        source,
+        "ex_dividend_date LIKE ?",
+        (f"{year}-01-%",),
+        returned_dates,
+        f"{year - 1}、{year} 年度重新同步時，此除息日皆未出現於來源回應",
+        detected_at,
+    )
 
 
 def _sync_etf_distributions_for_market(conn, client, **kwargs) -> dict:
@@ -252,6 +329,7 @@ def _etf_distribution_steps(
             if etf["status"] != "delisted"
         }
         yield
+        returned: dict[tuple[str, int], set[str]] = {}
         for etf, year in work:
             sync_progress.checkpoint()
             if etf["status"] == "delisted":
@@ -276,10 +354,10 @@ def _etf_distribution_steps(
                 valid = [event for event in events if event["ex_dividend_date"]]
                 if len(valid) != len(events):
                     raise ValueError("配息事件缺少有效除息日")
-                # Design 062: the unit is one requested year, which the
-                # stale-row flagging below also assumes.
+                # Design 062: the unit is one requested year — or next
+                # January, which the sources file under it (design 076).
                 if any(
-                    not event["ex_dividend_date"].startswith(f"{year}-")
+                    not in_query_year(event["ex_dividend_date"], year)
                     for event in valid
                 ):
                     raise ValueError("除息日不在查詢年度")
@@ -308,12 +386,20 @@ def _etf_distribution_steps(
                         fields=("events",),
                         url=url,
                     )
+                returned[(etf["id"], year)] = {e["ex_dividend_date"] for e in valid}
                 synced += len(valid)
                 for change, count in unit_changes.items():
                     changes[change] += count
             except Exception as exc:
                 task.record(key, "parse_failed", url=url, exc=exc)
                 failed_units.append(key)
+        with write_transaction(conn):
+            for (security_id, year), dates in returned.items():
+                earlier = returned.get((security_id, year - 1))
+                if earlier is not None:
+                    _flag_stale_january(
+                        conn, security_id, source, year, dates | earlier, fetched_at
+                    )
     return {
         "synced": synced,
         **changes,
@@ -448,14 +534,16 @@ def _pending_amount_rows(
 
 
 def _refresh_years(today: date, pending: list[sqlite3.Row]) -> list[int]:
-    """Design 016 §4.2: this year; next year too in December (late
-    announcements for January ex-dates); plus any year still holding a
+    """Design 016 §4.2: this year, plus every year that can return a
     recent distribution whose amount is unknown (e.g. last December's,
-    refreshed in January)."""
+    refreshed in January). Design 076: January also asks last year, which
+    holds this January's ex-dates announced in December; December no
+    longer asks next year, whose list is still empty then."""
     years = {today.year}
-    if today.month == 12:
-        years.add(today.year + 1)
-    years.update(int(row["ex_dividend_date"][:4]) for row in pending)
+    if today.month == 1:
+        years.add(today.year - 1)
+    for row in pending:
+        years |= query_years(row["ex_dividend_date"])
     return sorted(years)
 
 
@@ -545,7 +633,7 @@ def _start_held_markets(
                 "AND ex_dividend_date IS NOT NULL",
                 (sid, since.isoformat()),
             ):
-                year_map[sid].add(int(row[0][:4]))
+                year_map[sid] |= query_years(row[0])
             for (unit_sid, unit_source, period), unit in coverage.items():
                 if (
                     unit_sid == sid

@@ -31,6 +31,13 @@ from taiwan_stock.shared.dates import today_taipei
 from taiwan_stock.web.deps import get_http_client
 
 
+def test_catalog_sync_notice_groups_the_count(tmp_path):
+    """Design 078: the market-wide catalog count uses thousands separators."""
+    with TestClient(create_app(tmp_path)) as client:
+        response = client.get("/securities", params={"synced": 2394})
+    assert "商品名單同步完成，共 2,394 檔。" in response.text
+
+
 @pytest.mark.parametrize(
     ("security_type", "view", "pay_month", "columns"),
     [

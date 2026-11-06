@@ -110,6 +110,18 @@ def test_cli_web_warns_when_bound_beyond_loopback(tmp_path, capsys, host, warned
     assert ("沒有登入保護" in capsys.readouterr().err) == warned
 
 
+@pytest.mark.parametrize("dev", [True, False])
+def test_cli_web_labels_development_data(tmp_path, capsys, monkeypatch, dev):
+    """Design 077: the startup line says when it is the source tree's data."""
+    monkeypatch.setattr(cli, "dev_data_dir", lambda: tmp_path if dev else None)
+    with patch("uvicorn.run"), patch.object(cli, "create_app"):
+        cli.main(["web", "--no-browser", "--data-dir", str(tmp_path)])
+
+    line = capsys.readouterr().out
+    assert f"(data: {tmp_path}" in line
+    assert ("開發資料" in line) is dev
+
+
 def test_cli_sync_etf_distributions_parser_defaults():
     parser = cli.build_parser()
     args = parser.parse_args(["sync", "etf-distributions"])

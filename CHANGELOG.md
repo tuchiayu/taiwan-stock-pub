@@ -2,6 +2,21 @@
 
 本專案的重要變更會記錄在此文件。格式參考 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/)，版本號採用 [Semantic Versioning](https://semver.org/lang/zh-TW/)。
 
+## [0.2.0] - 2026-11-06
+
+### 新增
+
+- 交易表單的股數、價格、金額與費用欄位，以及試算預覽、同步筆數等數字以千分位顯示
+- clone 後從原始碼執行（`pip install -e .`）時，資料改存在專案內的 `dev-data/`，開發時不會讀寫安裝版的資料；以 `pip install .`、`pipx` 或 `uv tool` 安裝時位置不變
+
+### 修正
+
+- ETF 配息來源把 1 月除息歸到前一年時，1 月配息不再缺漏或被誤標待確認
+
+### 升級注意
+
+- 若 0.1.0 是以 `pip install -e .` 安裝並當作日常使用，升級後會看到空的資料庫；原資料仍在 `%LOCALAPPDATA%\TaiwanStock\data`（Windows）或 `~/.local/share/taiwan-stock`（macOS / Linux）。可用 `--data-dir` 或環境變數 `TSL_DATA_DIR` 指向原資料夾，或改以 `pip install .` 安裝
+
 ## [0.1.0] - 2026-11-02
 
 ### 新增

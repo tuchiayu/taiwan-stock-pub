@@ -107,20 +107,22 @@ def create_trade_form(
     enhanced: str = Form(""),
     conn: sqlite3.Connection = Depends(get_db),
 ):
-    form_values = {
-        "broker_account_id": broker_account_id,
-        "security_code": security_code,
-        "event_type": event_type,
-        "trade_date": trade_date,
-        "quantity": quantity,
-        "unit_price": unit_price,
-        "executed_amount": executed_amount,
-        "commission": commission,
-        "transaction_tax": transaction_tax,
-        "other_fees": other_fees,
-        "is_day_trade": is_day_trade,
-        "note": note,
-    }
+    form_values = trade_forms.ungroup(
+        {
+            "broker_account_id": broker_account_id,
+            "security_code": security_code,
+            "event_type": event_type,
+            "trade_date": trade_date,
+            "quantity": quantity,
+            "unit_price": unit_price,
+            "executed_amount": executed_amount,
+            "commission": commission,
+            "transaction_tax": transaction_tax,
+            "other_fees": other_fees,
+            "is_day_trade": is_day_trade,
+            "note": note,
+        }
+    )
     errors = trade_forms.validate(form_values)
     security = trade_forms.resolve_security(conn, security_code)
     if not security:

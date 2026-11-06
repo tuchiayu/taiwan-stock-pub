@@ -1,4 +1,12 @@
 // The backend owns Decimal arithmetic, product classification and dated tax rules.
+// Design 078: group a backend Decimal string by text, never through Number.
+function groupDigits(value) {
+  const match = /^(-?)(\d+)(\.\d+)?$/.exec(String(value));
+  if (!match) return value;
+  return match[1] + match[2].replace(/\B(?=(\d{3})+$)/g, ',') + (match[3] || '');
+}
+const ungroup = value => value.replaceAll(',', '').trim();
+
 function selectSecurity(value, options) {
   const text = value.trim();
   if (text.includes(':')) return options.find(o => o.value.toUpperCase() === text.toUpperCase());
@@ -39,9 +47,18 @@ function enhanceTradeForm(form) {
   const dayTrade = find('day-trade-checkbox'), output = find('preview');
   const fees = [commission, tax], reset = form.querySelector('[data-reset-fees]');
   const options = Array.from(form.querySelector('datalist').options);
-  const nullable = value => value.trim() === '' ? null : value;
+  const nullable = value => ungroup(value) === '' ? null : ungroup(value);
+  const numeric = [qty, price, amount, commission, tax, other];
   let timer, previousType = type.value;
   reset.hidden = false;
+  // Design 078 §4.2.3: grouped while displayed, plain while edited and sent.
+  const regroup = field => { field.value = groupDigits(ungroup(field.value)); };
+  numeric.forEach(field => {
+    regroup(field);
+    field.addEventListener('focus', () => { if (!field.readOnly) field.value = ungroup(field.value); });
+    field.addEventListener('blur', () => regroup(field));
+  });
+  form.addEventListener('submit', () => numeric.forEach(field => { field.value = ungroup(field.value); }));
   function hide(container, hidden) {
     container.hidden = hidden;
     container.querySelectorAll('input').forEach(field => { field.disabled = hidden; });
@@ -55,14 +72,14 @@ function enhanceTradeForm(form) {
     if (amount.readOnly) amount.value = '';
   }
   const quotes = latestQuote(window.fetch.bind(window), result => {
-    if (amount.readOnly) amount.value = result.executedAmount ?? '';
+    if (amount.readOnly) amount.value = groupDigits(result.executedAmount ?? '');
     fees.forEach((field, index) => {
       const estimate = index ? result.transactionTax : result.commission;
       form.querySelector(`[data-fee-status="${field.name}"]`).textContent = field.value !== ''
-        ? '已使用手動費用' : `自動試算：${estimate ?? '尚無金額'}${estimate === null ? '' : ' 元'}`;
+        ? '已使用手動費用' : `自動試算：${estimate == null ? '尚無金額' : groupDigits(estimate)}${estimate === null ? '' : ' 元'}`;
     });
     const label = type.value === 'opening' ? '期初持股總成本' : type.value === 'sell' ? '預估實收' : '預估付款';
-    output.textContent = (result.netAmount === null ? '金額尚未完整' : `${label} NT$ ${result.netAmount}`)
+    output.textContent = (result.netAmount === null ? '金額尚未完整' : `${label} NT$ ${groupDigits(result.netAmount)}`)
       + '；儲存時以系統計算為準。' + [...(result.warnings || []), ...(result.notices || [])].join(' ');
   }, () => clearPreview('暫時無法取得試算；人工費用已保留，儲存時由系統重新計算。'));
   function update() {
@@ -80,16 +97,16 @@ function enhanceTradeForm(form) {
     find('date-label').textContent = opening ? '取得日期' : '交易日期';
     find('amount-label').textContent = opening ? '期初持股總成本（元，未知可留空）' : '成交金額（元）';
     const wasAuto = amount.readOnly;
-    amount.readOnly = !opening && price.value.trim() !== '';
+    amount.readOnly = !opening && ungroup(price.value) !== '';
     if (wasAuto && !amount.readOnly && !opening) amount.value = '';
     clearPreview('正在取得試算；儲存時以系統計算為準。');
-    if (!security || !account.value || !date.value || !/^\d+$/.test(qty.value) || Number(qty.value) <= 0) {
+    if (!security || !account.value || !date.value || !/^\d+$/.test(ungroup(qty.value)) || Number(ungroup(qty.value)) <= 0) {
       clearPreview('請提供帳戶、明確商品、日期與股數後試算。');
       return;
     }
     const payload = {
       brokerAccountId: account.value, securityId: security.dataset.securityId,
-      eventType: type.value, tradeDate: date.value, quantity: Number(qty.value),
+      eventType: type.value, tradeDate: date.value, quantity: Number(ungroup(qty.value)),
       unitPrice: opening ? null : nullable(price.value),
       executedAmount: amount.readOnly ? null : nullable(amount.value),
       commission: opening ? null : nullable(commission.value),
@@ -107,4 +124,4 @@ function enhanceTradeForm(form) {
 }
 
 if (typeof document !== 'undefined') document.querySelectorAll('[data-trade-form]').forEach(enhanceTradeForm);
-if (typeof module !== 'undefined') module.exports = {selectSecurity, latestQuote, enhanceTradeForm};
+if (typeof module !== 'undefined') module.exports = {groupDigits, selectSecurity, latestQuote, enhanceTradeForm};

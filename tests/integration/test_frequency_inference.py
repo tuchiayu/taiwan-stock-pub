@@ -207,9 +207,12 @@ def test_full_sync_backfills_0051_once_before_annual_inference(conn, monkeypatch
             (security_id,),
         ).fetchone()[0]
     )
-    assert first["annual_backfill"]["twse"]["synced"] == 1
+    # Design 076: the window's never-confirmed previous year (2023) is now
+    # part of the main pass, so the separate annual backfill has nothing left.
+    assert "annual_backfill" not in first
+    assert first["twse"]["synced"] == 3
     assert inferred["value"] == "annual"
-    assert requested == [2024, 2025, 2026, 2023]
+    assert requested == [2023, 2024, 2025, 2026]
 
     requested.clear()
     second = operations.execute(
@@ -255,7 +258,8 @@ def test_full_sync_backfills_006201_from_tpex(conn, monkeypatch):
     result = operations.execute(
         conn, client, "full-etf-distributions", {"reference_year": 2026}
     )
-    assert result["annual_backfill"]["tpex"]["synced"] == 1, result
+    assert "annual_backfill" not in result, result  # design 076: main pass
+    assert result["tpex"]["synced"] == 3, result
     inferred = json.loads(
         conn.execute(
             "SELECT distribution_frequency_inferred FROM etf_profiles "
@@ -264,7 +268,7 @@ def test_full_sync_backfills_006201_from_tpex(conn, monkeypatch):
         ).fetchone()[0]
     )
     assert inferred["value"] == "annual"
-    assert requested == [2024, 2025, 2026, 2023]
+    assert requested == [2023, 2024, 2025, 2026]
 
 
 def test_infer_does_not_guess_annual_when_a_spanned_year_is_incomplete(conn):

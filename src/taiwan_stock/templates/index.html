@@ -30,7 +30,7 @@
 {% if prices_synced is not none %}
 <div class="notice success">
   <span aria-hidden="true">✓</span>
-  <div>{% if price_sync_summary %}已同步股價：{{ price_sync_summary }}{% else %}已同步 TWSE／TPEx 最新股價（共 {{ prices_synced }} 筆）。{% endif %}</div>
+  <div>{% if price_sync_summary %}已同步股價：{{ price_sync_summary }}{% else %}已同步 TWSE／TPEx 最新股價（共 {{ prices_synced|number(0) }} 筆）。{% endif %}</div>
 </div>
 {% endif %}
 
@@ -231,7 +231,7 @@
                   <tr>
                     <th scope="row" class="col-date">{{ lot.trade_date }}</th>
                     <td class="col-number">{{ lot.holding_days|number(0) }} 天</td>
-                    <td class="col-number">{{ lot.adjusted_quantity|number(None) }}{% if lot.adjusted_quantity != lot.original_quantity %}<span class="cell-note">原 {{ lot.original_quantity }}</span>{% endif %}</td>
+                    <td class="col-number">{{ lot.adjusted_quantity|number(None) }}{% if lot.adjusted_quantity != lot.original_quantity %}<span class="cell-note">原 {{ lot.original_quantity|number(None) }}</span>{% endif %}</td>
                     <td class="col-number">{{ lot.trade_price|number(2, true) }}</td>
                     <td class="col-number">{{ lot.cost|number(0) if lot.cost is not none else '成本未知' }}</td>
                     <td class="col-number">{{ lot.market_value|number(0) }}</td>
@@ -244,7 +244,7 @@
               </table>
               {% elif lots|length == 1 %}
               {% set lot = lots[0] %}
-              <p class="single-lot">取得日 {{ lot.trade_date }}（{{ lot.holding_days|number(0) }} 天）{% if lot.trade_price %}，成交價 {{ lot.trade_price|number(2, true) }}{% endif %}{% if lot.adjusted_quantity != lot.original_quantity %}，股數 {{ lot.adjusted_quantity }}（原 {{ lot.original_quantity }}）{% endif %}</p>
+              <p class="single-lot">取得日 {{ lot.trade_date }}（{{ lot.holding_days|number(0) }} 天）{% if lot.trade_price %}，成交價 {{ lot.trade_price|number(2, true) }}{% endif %}{% if lot.adjusted_quantity != lot.original_quantity %}，股數 {{ lot.adjusted_quantity|number(None) }}（原 {{ lot.original_quantity|number(None) }}）{% endif %}</p>
               {% endif %}
             </div>
           </td>

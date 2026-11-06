@@ -18,6 +18,16 @@ LABELS = {
 }
 
 
+def ungroup(values):
+    """Design 078 §4.2.4: drop thousands separators from the numeric fields,
+    so a form sent as `20,000` saves and redisplays as `20000`."""
+    result = dict(values)
+    for key in ("quantity", *limits.MONEY_FIELDS):
+        if isinstance(result.get(key), str):
+            result[key] = result[key].replace(",", "")
+    return result
+
+
 def validate(values):
     errors = {}
     if values.get("event_type") not in ("buy", "sell", "opening"):
