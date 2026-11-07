@@ -2,7 +2,7 @@
 {% from "_actions.html" import create_label with context %}
 {% from "_fields.html" import errors, invalid, error %}
 {% block title %}備份與設定 - 台灣股市數據工具{% endblock %}
-{% block head %}<script src="/static/section-shortcuts.js?v=1" defer></script>{% endblock %}
+{% block head %}<script src="{{ static_url('section-shortcuts.js') }}" defer></script>{% endblock %}
 {% macro notice(kind, text) %}<div class="notice {{ kind }}"{% if kind == 'success' %} role="status"{% endif %}><span aria-hidden="true">{{ '✓' if kind == 'success' else '×' }}</span><div>{{ text }}</div></div>{% endmacro %}
 {% block content %}
 <section class="workspace-controls" aria-label="設定操作"><div class="workspace-heading">
@@ -18,11 +18,18 @@
   <div class="panel-heading workspace-data-heading">
     <div>
       <h2>備份與還原</h2><p class="inline-meta">{% if backups %}最近備份：{{ backups[0].modified_at_taipei }}（台北時間）{% else %}尚無備份{% endif %}</p>
-      <p class="subtitle">共有 {{ backups|length }} 份備份。還原會以所選備份覆蓋目前資料；系統會先驗證備份，並自動保存目前狀態。匯入前與還原前的自動備份各保留最新 10 份，較舊的會自動刪除；手動備份不會被自動刪除。</p>
+      <p class="subtitle">共有 {{ backups|length }} 份備份。還原會以所選備份覆蓋目前資料；系統會先驗證備份，並自動保存目前狀態。匯入前與還原前的自動備份各保留最新 10 份，較舊的會自動刪除；手動與上傳的備份不會被自動刪除。</p>
+      <p class="subtitle">換電腦：在舊電腦下載備份，到新電腦上傳後按「還原這份備份」。備份檔含全部交易與帳戶資料，請妥善保管。</p>
+      <p class="inline-meta">資料夾：<code>{{ data_dir }}</code></p>
     </div>
   </div>
+  <form method="post" action="/settings/backups/upload" enctype="multipart/form-data" class="toolbar-form">
+    <label for="backup-upload-file">上傳備份檔<input id="backup-upload-file" type="file" name="file" accept=".db,.sqlite,.sqlite3" required></label>
+    <button type="submit" class="secondary">上傳備份</button>
+  </form>
   {% if created %}{{ notice('success', '已建立備份：' ~ created) }}{% endif %}
-  {% if restored %}{{ notice('success', '已還原備份：' ~ restored ~ '（還原前的狀態也自動多存了一份備份）') }}{% endif %}
+  {% if uploaded %}{{ notice('success', '已上傳備份：' ~ uploaded ~ '。確認無誤後按這份的「還原這份備份」。') }}{% endif %}
+  {% if restored %}{{ notice('success', '已還原備份：' ~ restored ~ '（還原前的狀態也自動多存了一份備份）。' ~ (restore_summary or '')) }}{% endif %}
   {% if deleted %}{{ notice('success', '已刪除備份：' ~ deleted) }}{% endif %}
   {% if settings_error and error_section == 'backups' %}{{ notice('error', settings_error) }}{% endif %}
   <p class="scroll-hint table-scroll-hint" id="backup-table-scroll-help">左右捲動查看完整欄位。</p>
@@ -45,6 +52,7 @@
           <td class="col-text">{{ b.note or '—' }}<small class="cell-note">{{ b.filename }}</small></td>
           <td class="col-number">{{ (b.size_bytes / 1024) | round(1) }} KB</td>
           <td class="col-actions">
+            <a class="button secondary" href="/settings/backups/download?filename={{ b.filename | urlencode }}" download>下載</a>
             <form method="post" action="/settings/backups/restore" class="inline-form" onsubmit="return confirm('確定還原這份備份？目前資料將被覆蓋，系統會先保存目前狀態。')">
               <input type="hidden" name="filename" value="{{ b.filename }}" />
               <button type="submit" class="secondary">還原這份備份</button>

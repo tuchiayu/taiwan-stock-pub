@@ -1,5 +1,6 @@
 """Shared Jinja2Templates instance for main.py and the page routers."""
 
+import hashlib
 from contextlib import closing, nullcontext
 from pathlib import Path
 
@@ -55,6 +56,25 @@ def sync_context(request):
     }
 
 
+STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+_static_versions = {}
+
+
+def static_url(path):
+    """`/static/<path>?v=<content hash>` (Issue #228): a changed file gets a
+    new URL, so a browser never pairs a new page with a cached old script or
+    stylesheet. Re-hashed when the file's mtime or size changes, so an edit
+    shows on the next page load without a restart. A missing file raises."""
+    file = STATIC_DIR / path
+    stat = file.stat()
+    key = (stat.st_mtime_ns, stat.st_size)
+    cached = _static_versions.get(path)
+    if cached is None or cached[0] != key:
+        cached = (key, hashlib.sha256(file.read_bytes()).hexdigest()[:12])
+        _static_versions[path] = cached
+    return f"/static/{path}?v={cached[1]}"
+
+
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
 templates = Jinja2Templates(
     directory=str(TEMPLATES_DIR), context_processors=[sync_context]
@@ -67,5 +87,6 @@ templates.env.filters["market_label"] = market_label
 templates.env.filters["taipei_time"] = taipei_time
 templates.env.filters["industry_name"] = industry_name
 templates.env.filters["industry_filter_label"] = industry_filter_label
+templates.env.globals["static_url"] = static_url
 templates.env.globals["status_labels"] = STATUS_LABELS
 templates.env.globals["source_labels"] = sync_history.SOURCE_LABELS

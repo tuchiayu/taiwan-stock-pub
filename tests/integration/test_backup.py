@@ -1,5 +1,7 @@
 """Integration tests for SQLite backup/restore (design 002 §4.13)."""
 
+import io
+import sqlite3
 import subprocess
 import sys
 import time
@@ -355,3 +357,129 @@ def test_settings_page_lists_and_deletes_backups(data_dir):
             follow_redirects=False,
         )
         assert "settings_error" in failed.headers["location"]
+
+
+def _backup_dir_files(data_dir):
+    directory = data_dir / "backups"
+    return sorted(p.name for p in directory.iterdir()) if directory.is_dir() else []
+
+
+def test_import_backup_lists_an_upload_under_a_new_name(data_dir):
+    """Design 080 §4.2.2: any file name works; the original is kept as a note."""
+    source = backup.create_backup(data_dir)
+    content = source.read_bytes()
+    name = "C:\\Users\\me\\Downloads\\" + source.stem + " (1).db"
+
+    path = backup.import_backup(data_dir, io.BytesIO(content), name)
+
+    assert path.name != source.name and path.name.startswith("taiwan_stock-")
+    assert path.read_bytes() == content
+    listed = {b["filename"]: b for b in backup.list_backups(data_dir)}
+    assert listed[path.name]["kind_label"] == "上傳的備份"
+    assert listed[path.name]["note"] == f"上傳：{source.stem} (1).db"
+    assert not [n for n in _backup_dir_files(data_dir) if n.endswith(".part")]
+
+
+def test_import_backup_shortens_and_defaults_the_original_name(data_dir):
+    content = backup.create_backup(data_dir).read_bytes()
+
+    long = backup.import_backup(data_dir, io.BytesIO(content), "x" * 300 + ".db")
+    unnamed = backup.import_backup(data_dir, io.BytesIO(content), None)
+
+    labels = {b["filename"]: b["note"] for b in backup.list_backups(data_dir)}
+    assert labels[long.name] == "上傳：" + "x" * 100
+    assert labels[unnamed.name] == "上傳：未命名檔案"
+
+
+def _foreign_database(path):
+    conn = sqlite3.connect(path)
+    conn.execute("CREATE TABLE notes (body TEXT)")
+    conn.commit()
+    conn.close()
+    return path.read_bytes()
+
+
+def _newer_database(data_dir, path):
+    path.write_bytes(backup.create_backup(data_dir).read_bytes())
+    conn = sqlite3.connect(path)
+    newest = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
+    columns = [r[1] for r in conn.execute("PRAGMA table_info(schema_migrations)")]
+    values = {c: "x" for c in columns} | {"version": newest + 1}
+    conn.execute(
+        f"INSERT INTO schema_migrations ({', '.join(values)}) "
+        f"VALUES ({', '.join('?' * len(values))})",
+        list(values.values()),
+    )
+    conn.commit()
+    conn.close()
+    return path.read_bytes()
+
+
+def _truncated_database(data_dir):
+    content = backup.create_backup(data_dir).read_bytes()
+    return content[: len(content) // 2]
+
+
+@pytest.mark.parametrize(
+    ("make", "message"),
+    [
+        (lambda d, t: b"", "不是 SQLite"),
+        (lambda d, t: b"name,code\n2330,TSMC\n", "不是 SQLite"),
+        (lambda d, t: _foreign_database(t / "other.db"), "不是本程式的備份"),
+        (lambda d, t: _newer_database(d, t / "newer.db"), "還新"),
+        (lambda d, t: _truncated_database(d), "完整性檢查失敗"),
+    ],
+    ids=["empty", "csv", "foreign", "newer", "truncated"],
+)
+def test_import_backup_rejects_bad_files_without_leaving_any(
+    data_dir, tmp_path_factory, make, message
+):
+    content = make(data_dir, tmp_path_factory.mktemp("upload"))
+    before = _backup_dir_files(data_dir)
+
+    with pytest.raises(backup.BackupError, match=message):
+        backup.import_backup(data_dir, io.BytesIO(content), "upload.db")
+
+    assert _backup_dir_files(data_dir) == before
+
+
+def test_import_backup_stops_at_the_size_limit(data_dir, monkeypatch):
+    content = backup.create_backup(data_dir).read_bytes()
+    before = _backup_dir_files(data_dir)
+    monkeypatch.setattr(backup, "MAX_UPLOAD_BYTES", len(content) - 1)
+    monkeypatch.setattr(backup, "_UPLOAD_CHUNK", 4096)
+
+    with pytest.raises(backup.BackupError, match="上限"):
+        backup.import_backup(data_dir, io.BytesIO(content), "big.db")
+
+    assert _backup_dir_files(data_dir) == before
+
+
+def test_uploaded_backups_are_not_pruned(data_dir):
+    content = backup.create_backup(data_dir).read_bytes()
+    uploads = [
+        backup.import_backup(data_dir, io.BytesIO(content), f"{i}.db")
+        for i in range(backup.AUTO_BACKUP_KEEP + 1)
+    ]
+    for _ in range(backup.AUTO_BACKUP_KEEP + 1):
+        backup.create_backup(data_dir, backup.PRE_RESTORE)
+
+    remaining = {b["filename"] for b in backup.list_backups(data_dir)}
+    assert {p.name for p in uploads} <= remaining
+
+
+def test_restoring_an_upload_still_checks_related_rows(data_dir):
+    """Design 080: an upload passes through restore's own checks unchanged."""
+    path = data_dir / "orphan.db"
+    path.write_bytes(backup.create_backup(data_dir).read_bytes())
+    conn = sqlite3.connect(path)
+    conn.execute(
+        "INSERT INTO watchlist (security_id, updated_at) "
+        "VALUES ('missing', '2026-11-07T00:00:00Z')"
+    )
+    conn.commit()
+    conn.close()
+    uploaded = backup.import_backup(data_dir, io.BytesIO(path.read_bytes()), "o.db")
+
+    with pytest.raises(backup.BackupError, match="關聯資料不完整"):
+        backup.restore_backup(data_dir, uploaded.name)

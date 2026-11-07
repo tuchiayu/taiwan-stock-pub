@@ -5,7 +5,7 @@
 {% from "_fields.html" import errors, invalid, error as field_error %}
 {% block title %}交易紀錄 - 台灣股市數據工具{% endblock %}
 {% block head %}
-<script src="/static/trade-fee-preview.js?v=7" defer></script>
+<script src="{{ static_url('trade-fee-preview.js') }}" defer></script>
 {% endblock %}
 {% block content %}
 <section class="workspace-controls" aria-label="交易操作"><div class="workspace-heading">
@@ -20,7 +20,7 @@
   <p class="subtitle">
     <a href="{{ filtered_export_url }}">匯出符合條件的全部交易</a> · <a href="/transactions/export">匯出目前所有交易為 CSV</a>
   </p>
-  <p class="subtitle">匯出檔含 trade_id，可在試算表整批修改後再匯入：有 trade_id 的列會修改對應交易，沒有的列會新增，跟既有交易完全相同的列會標為疑似重複；從其他資料庫匯出的檔案也能直接匯入，不需刪除任何欄位。CSV 不會刪除交易，檔案中沒有出現的交易維持原樣。</p>
+  <p class="subtitle">匯出檔含 trade_id，可在試算表整批修改後再匯入：有 trade_id 的列會修改對應交易，沒有的列會新增，跟既有交易完全相同的列會標為疑似重複；從其他資料庫匯出的檔案也能直接匯入，不需刪除任何欄位。CSV 不會刪除交易，檔案中沒有出現的交易維持原樣。CSV 只包含交易；換電腦請用設定頁的備份。</p>
   <p class="subtitle">上傳後會先顯示預覽，確認才寫入，寫入前會自動備份資料庫。CSV 欄位：broker_account_name, security_code, market, event_type, trade_date, quantity, broker_account_id/unit_price/executed_amount/commission/transaction_tax/other_fees/is_day_trade/note/trade_id（選填）。有任何一列錯誤就整份不寫入，並標出是第幾列。</p>
 </div></details>
 {% if broker_accounts|length == 0 %}{{ create_link('#new-account', '新增券商帳戶') }}{% else %}{{ create_link(new_trade_url, '新增交易') }}{% endif %}</div>

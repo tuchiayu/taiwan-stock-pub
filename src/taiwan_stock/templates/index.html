@@ -3,8 +3,8 @@
 {% from "_actions.html" import sync_button, create_link with context %}
 {% block head %}
 <script>document.documentElement.classList.add("js");</script>
-<link rel="stylesheet" href="/static/holdings.css?v=12">
-<script src="/static/holdings-table.js?v=6" defer></script>
+<link rel="stylesheet" href="{{ static_url('holdings.css') }}">
+<script src="{{ static_url('holdings-table.js') }}" defer></script>
 {% endblock %}
 {% macro signed(value, suffix="") -%}
   {%- if value is none -%}—

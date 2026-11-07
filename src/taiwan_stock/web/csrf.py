@@ -22,6 +22,9 @@ to 127.0.0.1, so its `Origin` and `Host` agree on the attacker's name.
 names (plus an explicit `--host`) before a page or write is served.
 """
 
+import argparse
+import ipaddress
+import re
 from urllib.parse import urlsplit
 
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
@@ -34,10 +37,37 @@ LOCAL_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 _WILDCARD_HOSTS = frozenset({"", "0.0.0.0", "::"})
 
 
-def trusted_hosts(bind_host: str | None = None) -> frozenset[str]:
-    """The local names, plus `--host` when it names one specific address."""
+def trusted_hosts(
+    bind_host: str | None = None, extra: tuple[str, ...] = ()
+) -> frozenset[str]:
+    """The local names, plus `--host` when it names one specific address,
+    plus each `--trusted-host` (design 082: a private proxy's name, such as
+    `tailscale serve`'s). An attacker cannot make their own domain equal a
+    name the user chose, so #87's rebinding defense still holds."""
     host = (bind_host or "").strip("[]").lower()
-    return LOCAL_HOSTS if host in _WILDCARD_HOSTS else LOCAL_HOSTS | {host}
+    hosts = LOCAL_HOSTS if host in _WILDCARD_HOSTS else LOCAL_HOSTS | {host}
+    return hosts | {name.strip("[]").lower() for name in extra}
+
+
+_HOST_NAME = re.compile(
+    r"[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*"
+)
+
+
+def trusted_host_name(value: str) -> str:
+    """argparse type for `--trusted-host`: a bare host name or IP address,
+    lower-cased. A port, scheme, path, wildcard or space is refused."""
+    name = value.lower()
+    try:
+        return str(ipaddress.ip_address(name.strip("[]")))
+    except ValueError:
+        pass
+    if len(name) > 253 or not _HOST_NAME.fullmatch(name):
+        raise argparse.ArgumentTypeError(
+            "--trusted-host 只接受主機名稱或 IP"
+            f"（不含連接埠、網址或萬用字元）：{value!r}"
+        )
+    return name
 
 
 def _hostname(netloc: str) -> str | None:

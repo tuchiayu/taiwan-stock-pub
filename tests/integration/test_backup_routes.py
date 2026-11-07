@@ -125,3 +125,119 @@ def test_vacuum_conflict_when_sync_running_and_restore_recovers_running_sync(tmp
 
         # Now vacuum succeeds because no sync run is stuck in 'running'.
         assert client.post("/api/v1/vacuum").status_code == 200
+
+
+def test_settings_page_downloads_a_listed_backup(client, tmp_path):
+    """Design 080 §4.2.1."""
+    filename = client.post("/api/v1/backups").json()["filename"]
+
+    page = client.get("/settings")
+    assert f"/settings/backups/download?filename={filename}" in page.text
+    response = client.get("/settings/backups/download", params={"filename": filename})
+
+    assert response.status_code == 200
+    assert response.content == (tmp_path / "backups" / filename).read_bytes()
+    assert response.headers["content-type"] == "application/vnd.sqlite3"
+    assert "attachment" in response.headers["content-disposition"]
+    assert filename in response.headers["content-disposition"]
+    assert response.headers["cache-control"] == "no-store"
+
+
+@pytest.mark.parametrize(
+    "filename", ["taiwan_stock-nope.db", "../taiwan_stock.db", "taiwan_stock.db"]
+)
+def test_download_refuses_unlisted_files(client, filename):
+    response = client.get(
+        "/settings/backups/download",
+        params={"filename": filename},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert "settings_error=" in response.headers["location"]
+
+
+def _upload(client, content, name="taiwan_stock-old (1).db", **kwargs):
+    return client.post(
+        "/settings/backups/upload",
+        files={"file": (name, content, "application/octet-stream")},
+        follow_redirects=False,
+        **kwargs,
+    )
+
+
+def test_backup_moves_to_a_new_computer_by_download_and_upload(tmp_path):
+    """Design 080: download on the old data folder, upload and restore on a
+    fresh one, then the restore notice summarizes what came back."""
+    old, new = tmp_path / "old", tmp_path / "new"
+    with TestClient(create_app(old)) as client:
+        client.post("/api/v1/broker-accounts", json={"name": "舊電腦帳戶"})
+        filename = client.post("/api/v1/backups").json()["filename"]
+        content = client.get(
+            "/settings/backups/download", params={"filename": filename}
+        ).content
+
+    with TestClient(create_app(new)) as client:
+        assert client.get("/api/v1/broker-accounts").json()["items"] == []
+        uploaded = _upload(client, content)
+        assert uploaded.status_code == 303
+        location = uploaded.headers["location"]
+        assert "uploaded=" in location
+        page = client.get(location).text
+        assert "已上傳備份" in page and "上傳的備份" in page
+        assert "上傳：taiwan_stock-old (1).db" in page
+        new_name = [
+            b["filename"]
+            for b in client.get("/api/v1/backups").json()["items"]
+            if b["kind"] == "uploaded"
+        ][0]
+        # Uploading only lists the file; the data is unchanged until restore.
+        assert client.get("/api/v1/broker-accounts").json()["items"] == []
+
+        restored = client.post(
+            "/settings/backups/restore",
+            data={"filename": new_name},
+            follow_redirects=False,
+        )
+        assert "restored=" in restored.headers["location"]
+        notice = client.get(restored.headers["location"]).text
+        assert "目前資料：交易 0 筆、券商帳戶 1 個、自選 0 檔" in notice
+        assert "公司行動確認 0 筆" in notice
+        accounts = client.get("/api/v1/broker-accounts").json()["items"]
+        assert [a["name"] for a in accounts] == ["舊電腦帳戶"]
+
+
+def test_upload_reports_a_bad_file_and_keeps_nothing(client, tmp_path):
+    before = sorted((tmp_path / "backups").glob("*"))
+
+    response = _upload(client, b"date,code\n2026-11-07,0050\n", "trades.csv")
+
+    assert response.status_code == 303
+    assert "settings_error=" in response.headers["location"]
+    page = client.get(response.headers["location"]).text
+    assert "上傳失敗：這不是 SQLite 資料庫檔案" in page
+    after = sorted((tmp_path / "backups").glob("*"))
+    assert after == before
+
+
+def test_upload_rejects_a_cross_origin_post(client):
+    content = b"SQLite format 3\x00"
+
+    response = _upload(client, content, headers={"Origin": "https://evil.example"})
+
+    assert response.status_code == 403
+
+
+def test_settings_page_shows_the_data_folder_and_upload_form(client, tmp_path):
+    page = client.get("/settings").text
+
+    assert str(tmp_path) in page
+    assert 'action="/settings/backups/upload"' in page
+    assert 'enctype="multipart/form-data"' in page
+    assert "換電腦：在舊電腦下載備份" in page
+
+
+def test_transactions_page_says_csv_only_moves_trades(client):
+    page = client.get("/transactions").text
+
+    assert "CSV 只包含交易；換電腦請用設定頁的備份。" in page

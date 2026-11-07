@@ -4,8 +4,8 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{% block title %}台灣股市數據工具 Taiwan Stock{% endblock %}</title>
-    <link rel="stylesheet" href="/static/app.css?v=21" />
-    <link rel="stylesheet" href="/static/workspace.css?v=13" />
+    <link rel="stylesheet" href="{{ static_url('app.css') }}" />
+    <link rel="stylesheet" href="{{ static_url('workspace.css') }}" />
     {% block head %}{% endblock %}
   </head>
   <body class="{% block body_class %}{% endblock %}">
@@ -36,9 +36,9 @@
         <span>{% if version %}版本 {{ version }}{% endif %}</span>
       </div>
     </footer>
-    <script src="/static/form-feedback.js?v=1" defer></script>
-    <script src="/static/sync-jobs.js?v=3" defer></script>
+    <script src="{{ static_url('form-feedback.js') }}" defer></script>
+    <script src="{{ static_url('sync-jobs.js') }}" defer></script>
     <!-- After page scripts in head: holdings-table.js rebuilds its headers first. -->
-    <script src="/static/table-columns.js?v=1" defer></script>
+    <script src="{{ static_url('table-columns.js') }}" defer></script>
   </body>
 </html>

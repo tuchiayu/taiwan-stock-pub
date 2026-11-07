@@ -8,8 +8,9 @@ so WAL contents are handled by SQLite.
 import json
 import sqlite3
 import tempfile
+import uuid
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 from taiwan_stock.infrastructure import migrate, sync_jobs
 from taiwan_stock.infrastructure.db import (
@@ -33,12 +34,20 @@ _PREFIX = "taiwan_stock-"
 # made. Automatic kinds keep only their newest AUTO_BACKUP_KEEP copies;
 # manual backups and unlabeled ones from older versions are never pruned.
 MANUAL, PRE_IMPORT, PRE_RESTORE = "manual", "pre_import", "pre_restore"
+UPLOADED = "uploaded"
 KIND_LABELS = {
     MANUAL: "手動備份",
     PRE_IMPORT: "匯入前自動備份",
     PRE_RESTORE: "還原前自動備份",
+    UPLOADED: "上傳的備份",
 }
 AUTO_BACKUP_KEEP = 10
+
+# Design 080 §4.2.2: uploads stream to disk in chunks, never whole in memory.
+MAX_UPLOAD_BYTES = 1024 * 1024 * 1024
+_UPLOAD_CHUNK = 1024 * 1024
+_SQLITE_HEADER = b"SQLite format 3\x00"
+_UPLOAD_NAME_MAX = 100
 
 
 class BackupError(Exception):
@@ -168,6 +177,47 @@ def _resolve_backup_path(data_dir: Path, filename: str) -> Path:
     return path
 
 
+def backup_path(data_dir: Path, filename: str) -> Path:
+    """Design 080 §4.2.1: a listed backup's file, for download."""
+    return _resolve_backup_path(data_dir, filename)
+
+
+def import_backup(data_dir: Path, stream, original_name: str | None) -> Path:
+    """Design 080 §4.2.2: add an uploaded file to the backup list.
+
+    Checked like a restore's input before it is listed; nothing is left in
+    `backups/` when a check fails. Restoring it is a separate step.
+    """
+    directory = _backups_dir(data_dir)
+    part = directory / f".upload-{uuid.uuid4().hex}.part"
+    try:
+        size = 0
+        with part.open("wb") as out:
+            while chunk := stream.read(_UPLOAD_CHUNK):
+                size += len(chunk)
+                if size > MAX_UPLOAD_BYTES:
+                    raise BackupError(
+                        f"檔案超過 {MAX_UPLOAD_BYTES // (1024 * 1024 * 1024)} GB 上限"
+                    )
+                out.write(chunk)
+        with part.open("rb") as check:
+            if check.read(len(_SQLITE_HEADER)) != _SQLITE_HEADER:
+                raise BackupError("這不是 SQLite 資料庫檔案")
+        _check_backup_file(part)
+        path = _unique_backup_path(data_dir)
+        part.replace(path)
+    finally:
+        part.unlink(missing_ok=True)
+    _write_label(path, UPLOADED, f"上傳：{_upload_name(original_name)}")
+    return path
+
+
+def _upload_name(name: str | None) -> str:
+    # Browsers may send a full Windows path; keep only the last part.
+    base = PureWindowsPath(name or "").name.strip() or "未命名檔案"
+    return base[:_UPLOAD_NAME_MAX]
+
+
 def database_size_bytes(data_dir: Path) -> int:
     path = data_dir / DB_FILENAME
     return path.stat().st_size if path.is_file() else 0
@@ -225,6 +275,21 @@ def _check_backup_schema(conn: sqlite3.Connection) -> None:
         migrate.check_not_newer(versions, label="備份")
     except RuntimeError as exc:
         raise BackupError(str(exc)) from exc
+
+
+def _check_backup_file(path: Path) -> None:
+    """Integrity and schema, shared by restore and upload (design 080)."""
+    conn = sqlite3.connect(path)
+    try:
+        try:
+            result = conn.execute("PRAGMA integrity_check").fetchone()
+        except sqlite3.DatabaseError as exc:
+            raise BackupError(f"備份完整性檢查失敗：{exc}") from exc
+        if result[0] != "ok":
+            raise BackupError(f"備份完整性檢查失敗：{result[0]}")
+        _check_backup_schema(conn)
+    finally:
+        conn.close()
 
 
 def _foreign_key_problems(conn: sqlite3.Connection) -> str | None:
@@ -318,24 +383,13 @@ def restore_backup(data_dir: Path, filename: str) -> str:
     itself; raw file replacement would leave old WAL pages beside new data.
     Returns the pre-restore safety backup's filename.
     """
-    backup_path = _resolve_backup_path(data_dir, filename)
-
-    check_conn = sqlite3.connect(backup_path)
-    try:
-        try:
-            result = check_conn.execute("PRAGMA integrity_check").fetchone()
-        except sqlite3.DatabaseError as exc:
-            raise BackupError(f"備份完整性檢查失敗：{exc}") from exc
-        if result[0] != "ok":
-            raise BackupError(f"備份完整性檢查失敗：{result[0]}")
-        _check_backup_schema(check_conn)
-    finally:
-        check_conn.close()
+    source_path = _resolve_backup_path(data_dir, filename)
+    _check_backup_file(source_path)
 
     live_db_path = data_dir / DB_FILENAME
     with tempfile.TemporaryDirectory(prefix=".restore-", dir=data_dir) as temp:
         prepared_path = Path(temp) / "prepared.db"
-        _prepare_restore(backup_path, prepared_path)
+        _prepare_restore(source_path, prepared_path)
         try:
             with exclusive_database_access(data_dir):
                 if not live_db_path.is_file():

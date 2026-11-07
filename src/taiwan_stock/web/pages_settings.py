@@ -5,8 +5,8 @@ from decimal import Decimal
 from pathlib import Path
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Depends, Form, Request, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 
 from taiwan_stock.infrastructure import backup
 from taiwan_stock.infrastructure.db import read_transaction
@@ -27,6 +27,7 @@ def settings_page(
     request: Request,
     created: str | None = None,
     restored: str | None = None,
+    uploaded: str | None = None,
     settings_error: str | None = None,
     vacuumed: str | None = None,
     deleted: str | None = None,
@@ -41,6 +42,8 @@ def settings_page(
             **settings_context(conn, data_dir),
             "created": created,
             "restored": restored,
+            "restore_summary": restore_summary(conn) if restored else None,
+            "uploaded": uploaded,
             "settings_error": settings_error,
             "vacuumed": vacuumed,
             "deleted": deleted,
@@ -81,6 +84,8 @@ def settings_context(conn, data_dir):
             "db_size_bytes": backup.database_size_bytes(data_dir),
             "created": None,
             "restored": None,
+            "restore_summary": None,
+            "uploaded": None,
             "settings_error": None,
             "vacuumed": None,
             "deleted": None,
@@ -91,6 +96,36 @@ def settings_context(conn, data_dir):
             "editing_account": None,
             "preferences_failed": False,
         }
+
+
+# Design 080 §4.2.3: what a restore brought back that CSV would not.
+_SUMMARY_QUERIES = (
+    ("交易", "筆", "SELECT COUNT(*) FROM trades WHERE voided_at IS NULL"),
+    ("券商帳戶", "個", "SELECT COUNT(*) FROM broker_accounts"),
+    ("自選", "檔", "SELECT COUNT(*) FROM watchlist"),
+    ("個別持股領息銀行", "筆", "SELECT COUNT(*) FROM dividend_bank_preferences"),
+    (
+        "ETF 手動覆寫",
+        "檔",
+        "SELECT COUNT(*) FROM etf_profiles WHERE custodian_bank_user_override "
+        "IS NOT NULL OR distribution_frequency_user_override IS NOT NULL",
+    ),
+    (
+        "公司行動確認",
+        "筆",
+        "SELECT COUNT(*) FROM (SELECT DISTINCT action_id, broker_account_id "
+        "FROM corporate_action_reviews)",
+    ),
+)
+
+
+def restore_summary(conn) -> str:
+    with read_transaction(conn):
+        parts = [
+            f"{label} {conn.execute(sql).fetchone()[0]:,} {unit}"
+            for label, unit, sql in _SUMMARY_QUERIES
+        ]
+    return "目前資料：" + "、".join(parts) + "。"
 
 
 @router.post("/settings/vacuum")
@@ -114,6 +149,39 @@ def create_backup_form(data_dir: Path = Depends(get_data_dir)) -> RedirectRespon
     path = backup.create_backup(data_dir)
     return RedirectResponse(
         url=f"/settings?created={quote(path.name)}#backups", status_code=303
+    )
+
+
+@router.get("/settings/backups/download")
+def download_backup(filename: str, data_dir: Path = Depends(get_data_dir)):
+    try:
+        path = backup.backup_path(data_dir, filename)
+    except backup.BackupError as exc:
+        return RedirectResponse(
+            url=f"/settings?settings_error={quote(str(exc))}#backups", status_code=303
+        )
+    return FileResponse(
+        path,
+        media_type="application/vnd.sqlite3",
+        filename=path.name,
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@router.post("/settings/backups/upload")
+def upload_backup_form(
+    file: UploadFile, data_dir: Path = Depends(get_data_dir)
+) -> RedirectResponse:
+    # Sync def like the CSV import: the copy and SQLite checks are blocking.
+    try:
+        path = backup.import_backup(data_dir, file.file, file.filename)
+    except backup.BackupError as exc:
+        return RedirectResponse(
+            url=f"/settings?settings_error={quote(f'上傳失敗：{exc}')}#backups",
+            status_code=303,
+        )
+    return RedirectResponse(
+        url=f"/settings?uploaded={quote(path.name)}#backups", status_code=303
     )
 
 

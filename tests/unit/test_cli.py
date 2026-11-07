@@ -92,6 +92,56 @@ def test_cli_web_opens_a_url_the_trusted_host_check_accepts(tmp_path, host, url)
     browser.assert_called_once_with(url)
 
 
+def test_cli_web_passes_trusted_host_names_without_warning(tmp_path, capsys):
+    """Design 082: still bound to 127.0.0.1, so no "no login" warning."""
+    with patch("uvicorn.run") as mock_run, patch.object(cli, "create_app") as app:
+        cli.main(
+            [
+                "web",
+                "--no-browser",
+                "--trusted-host",
+                "MacAir.tail0000.ts.net",
+                "--trusted-host",
+                "100.64.0.1",
+                "--data-dir",
+                str(tmp_path),
+            ]
+        )
+
+    assert app.call_args.kwargs["extra_trusted_hosts"] == (
+        "macair.tail0000.ts.net",
+        "100.64.0.1",
+    )
+    assert mock_run.call_args.kwargs["host"] == "127.0.0.1"
+    out = capsys.readouterr()
+    assert "Also accepting host names: macair.tail0000.ts.net, 100.64.0.1" in out.out
+    assert "沒有登入保護" not in out.err
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "macair.ts.net:443",
+        "https://macair.ts.net",
+        "macair.ts.net/",
+        "*.ts.net",
+        "mac air",
+        " macair",
+        "",
+        "-macair",
+    ],
+)
+def test_cli_web_refuses_a_trusted_host_that_is_not_a_bare_name(
+    tmp_path, capsys, value
+):
+    with patch("uvicorn.run") as mock_run, pytest.raises(SystemExit) as exit_info:
+        cli.main(["web", f"--trusted-host={value}", "--data-dir", str(tmp_path)])
+
+    assert exit_info.value.code == 2
+    assert "--trusted-host 只接受主機名稱或 IP" in capsys.readouterr().err
+    mock_run.assert_not_called()
+
+
 @pytest.mark.parametrize(
     ("host", "warned"),
     [

@@ -2,9 +2,9 @@
 {% from "_actions.html" import sync_button with context %}
 {% block title %}領息月曆 - 台灣股市數據工具{% endblock %}
 {% block head %}
-<link rel="stylesheet" href="/static/income-calendar.css?v=18">
-<script src="/static/income-calendar.js?v=6" defer></script>
-<script src="/static/market-calendar.js?v=2" defer></script>
+<link rel="stylesheet" href="{{ static_url('income-calendar.css') }}">
+<script src="{{ static_url('income-calendar.js') }}" defer></script>
+<script src="{{ static_url('market-calendar.js') }}" defer></script>
 {% endblock %}
 {% block body_class %}{% if monthly and not error %}income-month-page{% endif %}{% endblock %}
 {% macro money(value) -%}

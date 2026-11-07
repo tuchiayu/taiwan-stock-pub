@@ -59,6 +59,8 @@ taiwan-stock web --port 8080      # 換用其他 port
 
 本程式沒有登入機制，只適合在本機使用。若以 `--host` 指定 `0.0.0.0` 或區網 IP，可連到該位址的裝置都能讀取與修改投資資料，啟動時也會印出警告。
 
+要從自己的手機或其他電腦連線，可以用 [Tailscale](https://tailscale.com/) 轉送，程式維持只在本機監聽：每台裝置登入同一個 Tailscale 帳號並啟用 MagicDNS 與 HTTPS Certificates，在執行程式的電腦執行 `tailscale serve --bg 2330`，再以 `taiwan-stock web --trusted-host <名稱>.<tailnet>.ts.net` 啟動，其他裝置開啟 `https://<名稱>.<tailnet>.ts.net/`。`--trusted-host` 只讓程式接受這個名稱，不會開放任何連線；不要用於對外公開的反向代理。
+
 ### 3. 功能頁面
 
 | 頁面 | 路徑 | 說明 |
@@ -68,11 +70,18 @@ taiwan-stock web --port 8080      # 換用其他 port
 | 交易紀錄 | `/transactions` | 逐筆買賣與期初持股，費用依商品與日期自動試算；支援篩選、分頁、CSV 匯出與預覽後匯入 |
 | 股票異動 | `/corporate-actions` | 分割／股票股利自動同步並套用，其餘事件手動記錄 |
 | 領息月曆 | `/income-calendar` | 依持股試算預計／已知領息金額，可依證券帳戶或領息銀行篩選 |
-| 備份與設定 | `/settings` | 本機資料庫備份與還原、費率與手續費折扣、證券帳戶管理 |
+| 備份與設定 | `/settings` | 本機資料庫備份、下載、上傳與還原、費率與手續費折扣、證券帳戶管理 |
+
+換電腦：
+1. 舊電腦：設定頁按「建立備份」，再按該份備份的「下載」。
+2. 新電腦：安裝並啟動程式，在設定頁「上傳備份檔」選擇下載的檔案（檔名不限），按「上傳備份」。
+3. 在清單中按這份「上傳的備份」的「還原這份備份」，並確認還原後顯示的交易、帳戶、自選等筆數。
+
+備份包含全部資料（交易、帳戶、自選、領息銀行、公司行動確認、費用設定等）；交易紀錄頁的 CSV 只包含交易，不適合用來換電腦。備份檔含全部帳本資料，請妥善保管。
 
 ### 4. 同步指令
 
-Web 上的同步按鈕會以背景任務執行，可在 `/sync-jobs/<job_id>` 查看進度。CLI 可獨立於 Web 執行，例如另開終端機或掛在排程器上：
+Web 上的同步按鈕會以背景任務執行，可在 `/sync-jobs/<job_id>` 查看進度；同步中按鈕會變成「取消同步」，取消後已完成的項目會保留，可再重試。CLI 可獨立於 Web 執行，例如另開終端機或掛在排程器上：
 
 ```bash
 taiwan-stock sync etf-distributions --held-only  # 日常更新持有／追蹤 ETF 的配息
@@ -93,11 +102,13 @@ taiwan-stock backup restore <檔名>               # Web 無法開啟時從終�
 ```bash
 ruff format --check .
 ruff check .
-pytest --cov=src --cov-report=term-missing --cov-fail-under=80
+pytest -n auto --dist=loadfile --cov=src --cov-report=term-missing --cov-fail-under=80
 pip-audit -r requirements.txt
 pip-audit -r requirements-dev.txt
 pre-commit run --all-files
 ```
+
+`-n auto` 依 CPU 核心數平行執行測試；排查單一失敗時可改用 `pytest <測試檔>` 逐一執行。
 
 ## License
 

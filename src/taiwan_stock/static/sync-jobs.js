@@ -12,6 +12,7 @@
   let serverTime = Date.parse(snapshot.server_now);
   let disconnected = false;
   let submitting = null;
+  let cancelling = null;
   let posting = false;
   let polling = false;
   let pollTimer = null;
@@ -25,9 +26,16 @@
     const seconds = Math.max(0, Math.floor((end - Date.parse(job.started_at || job.submitted_at)) / 1000));
     return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
   };
-  function render() {
+  const knownJobs = () => {
     const jobs = [...snapshot.jobs];
     if (selected && !jobs.some((job) => job.id === selected.id)) jobs.push(selected);
+    return jobs;
+  };
+  // Design 081: a button's own job is any active job of its operation (CLI and
+  // scheduled ones too), the same one that makes it read as syncing.
+  const ownJob = (operation) => knownJobs().find((job) => active(job) && job.operation === operation);
+  function render() {
+    const jobs = knownJobs();
     panel.hidden = !jobs.length && !snapshot.legacy_sources.length && !disconnected;
     const nextKey = JSON.stringify({
       jobs: jobs.map((j) => [j.id, j.status, j.phase, j.processed, j.total, j.failed_units, j.error, j.summary]),
@@ -59,7 +67,7 @@
     for (const form of forms) {
       const button = form.querySelector('button[type="submit"]');
       const operation = form.dataset.syncOperation;
-      const own = jobs.find((job) => active(job) && job.operation === operation);
+      const own = ownJob(operation);
       const blocked = snapshot.blocked_operations.includes(operation);
       const busy = submitting === form || Boolean(own);
       const label = button.querySelector('[data-sync-label-text]');
@@ -73,8 +81,11 @@
         reason = '暫時無法確認狀態，正在重新連線。';
       } else if (submitting === form) {
         text = '送出中…';
+      } else if (cancelling === form || own?.cancel_requested) {
+        text = '取消中…';
+        reason = '等目前的請求結束後停止。';
       } else if (own) {
-        text = own.status === 'queued' ? '準備同步…' : '同步中…';
+        text = '取消同步';
         reason = '進度與結果見上方同步進度。';
       } else if (blocked) {
         text = '其他同步中…';
@@ -86,7 +97,8 @@
       else control.removeAttribute('title');
       hint.textContent = reason;
       hint.hidden = !reason;
-      button.disabled = disconnected || busy || blocked;
+      // An own job's button stays usable to cancel it; its resources block it.
+      button.disabled = disconnected || submitting === form || cancelling === form || (own ? Boolean(own.cancel_requested) : blocked);
       form.setAttribute('aria-busy', String(busy));
     }
   }
@@ -163,8 +175,31 @@
       else schedulePoll();
     }
   }
+  async function cancelJob(form, job) {
+    if (cancelling || submitting || disconnected || job.cancel_requested) return;
+    if (!confirm('確定取消同步？已完成的項目會保留，之後可以重試。')) return;
+    cancelling = form;
+    // A status response begun before the cancel must not show it as undone.
+    generation += 1;
+    render();
+    try {
+      const response = await fetch(`/api/v2/sync-jobs/${encodeURIComponent(job.id)}/cancel`, {method: 'POST', signal: AbortSignal.timeout(15000)});
+      if (!response.ok) throw new Error('cancel failed');
+      const updated = await response.json();
+      snapshot = {...snapshot, jobs: snapshot.jobs.map((old) => old.id === updated.id ? updated : old)};
+      if (selected?.id === updated.id) selected = updated;
+    } catch (_) {
+      disconnected = true;
+    } finally {
+      cancelling = null;
+      render();
+      poll();
+    }
+  }
   forms.forEach((form) => form.addEventListener('submit', async (event) => {
     event.preventDefault();
+    const own = ownJob(form.dataset.syncOperation);
+    if (own) { await cancelJob(form, own); return; }
     if (submitting || disconnected || snapshot.blocked_operations.includes(form.dataset.syncOperation)) return;
     submitting = form;
     posting = true;

@@ -3,7 +3,7 @@
 {% from "_cost_quality.html" import cost_quality %}
 {% from "_actions.html" import create_link with context %}
 {% block title %}{{ security.code }} {{ security.name }} - 台灣股市數據工具{% endblock %}
-{% block head %}<script src="/static/section-shortcuts.js?v=1" defer></script>{% endblock %}
+{% block head %}<script src="{{ static_url('section-shortcuts.js') }}" defer></script>{% endblock %}
 {% block content %}
 {% include "_history_warnings.html" %}
 {% for holding in holdings %}{% for warning in holding.pricing_warnings %}<p class="notice">{{ holding.security_code }}：{{ warning }}</p>{% endfor %}{% endfor %}

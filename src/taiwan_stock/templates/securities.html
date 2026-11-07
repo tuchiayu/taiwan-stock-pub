@@ -3,7 +3,7 @@
 {% from "_pagination.html" import pagination %}
 {% from "_profile_value.html" import profile_value with context %}
 {% block title %}商品查詢 - 台灣股市數據工具{% endblock %}
-{% block head %}{% if security_type == 'etf' %}<script src="/static/etf-scale.js?v=1" defer></script>{% endif %}{% endblock %}
+{% block head %}{% if security_type == 'etf' %}<script src="{{ static_url('etf-scale.js') }}" defer></script>{% endif %}{% endblock %}
 {% block content %}
 {% macro column(key, label) %}
 <th scope="col" class="{{ {'code':'col-code', 'name':'col-name', 'market':'col-status', 'industry':'col-industry', 'net_assets':'col-number col-size', 'holders':'col-number col-holders', 'latest_close':'col-number col-quote', 'change_pct':'col-number col-change', 'bank':'col-bank', 'frequency':'col-frequency', 'next_distribution':'col-next-event', 'pay_date':'col-event', 'yield':'col-number col-yield'}.get(key, 'col-text') }}"{% if sort == key %} aria-sort="{{ 'ascending' if direction == 'asc' else 'descending' }}"{% endif %}{% if key == 'change_pct' %} title="依兩日收盤價計算，未還原權息；跨休市或資料不足顯示 —"{% endif %} data-col-key="{{ key }}">

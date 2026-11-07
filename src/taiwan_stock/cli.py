@@ -22,7 +22,7 @@ from taiwan_stock.main import create_app
 from taiwan_stock.shared.http import new_client as new_client
 from taiwan_stock.shared.ids import new_id
 from taiwan_stock.shared.version import get_version
-from taiwan_stock.web.csrf import LOCAL_HOSTS
+from taiwan_stock.web.csrf import LOCAL_HOSTS, trusted_host_name
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -53,6 +53,15 @@ def build_parser() -> argparse.ArgumentParser:
         type=str,
         default="127.0.0.1",
         help="Host interface to bind to (default: 127.0.0.1)",
+    )
+    web_parser.add_argument(
+        "--trusted-host",
+        action="append",
+        default=[],
+        type=trusted_host_name,
+        metavar="NAME",
+        help="Also accept this host name, e.g. a private proxy such as "
+        "`tailscale serve` (repeatable; the server still binds --host)",
     )
     web_parser.add_argument(
         "--no-browser",
@@ -185,7 +194,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 def run_web(args: argparse.Namespace) -> None:
     data_dir = args.data_dir or resolve_data_dir()
-    app = create_app(data_dir, bind_host=args.host)
+    app = create_app(
+        data_dir, bind_host=args.host, extra_trusted_hosts=tuple(args.trusted_host)
+    )
 
     # A wildcard bind is not a name the trusted-host check accepts (#87).
     browse_host = "127.0.0.1" if args.host in ("0.0.0.0", "::") else args.host
@@ -198,6 +209,8 @@ def run_web(args: argparse.Namespace) -> None:
     # Design 077: say so when this is the source tree's development data.
     label = "，開發資料" if Path(data_dir).resolve() == dev_data_dir() else ""
     print(f"Starting Taiwan Stock at {url} (data: {data_dir}{label})")
+    if args.trusted_host:
+        print(f"Also accepting host names: {', '.join(args.trusted_host)}")
     if args.host.strip("[]").lower() not in LOCAL_HOSTS:
         # There is no login: the Host check only stops browsers, not a
         # client that sends "Host: localhost" itself (design 030).

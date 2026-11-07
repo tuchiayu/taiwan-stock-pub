@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "_trade_form.html" import trade_fields %}
 {% block title %}編輯交易 - 台灣股市數據工具{% endblock %}
-{% block head %}<script src="/static/trade-fee-preview.js?v=7" defer></script>{% endblock %}
+{% block head %}<script src="{{ static_url('trade-fee-preview.js') }}" defer></script>{% endblock %}
 {% block content %}
 <section class="workspace-controls" aria-label="編輯交易操作"><div class="workspace-heading"><h1>編輯交易</h1><a class="button secondary" href="{{ return_to }}">返回交易紀錄</a></div><p class="inline-meta">更正交易內容後，按「儲存更正」更新持股計算。</p></section>
 {% if error %}<p class="notice error" role="alert">{{ error }}</p>{% endif %}

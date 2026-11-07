@@ -136,3 +136,71 @@ def test_wildcard_bind_still_only_trusts_local_names(tmp_path, bind_host):
 
 def test_trusted_hosts_normalizes_an_ipv6_bind_host():
     assert "fe80::1" in trusted_hosts("[FE80::1]")
+
+
+PROXY_NAME = "macair.tail0000.ts.net"
+
+
+def test_an_extra_trusted_host_is_accepted_and_others_are_not(tmp_path):
+    """Design 082: a private proxy's name joins the local names."""
+    app = create_app(tmp_path, extra_trusted_hosts=(PROXY_NAME,))
+    with TestClient(app) as client:
+        assert client.get("/", headers={"Host": PROXY_NAME}).status_code == 200
+        assert client.get("/", headers={"Host": "localhost:2330"}).status_code == 200
+        assert client.get("/", headers={"Host": REBOUND}).status_code == 400
+        allowed = client.post(
+            "/broker-accounts",
+            data={"name": "代理"},
+            headers={"Host": PROXY_NAME, "Origin": f"http://{PROXY_NAME}"},
+            follow_redirects=False,
+        )
+        assert allowed.status_code == 303
+        mismatched = client.post(
+            "/broker-accounts",
+            data={"name": "代理"},
+            headers={"Host": PROXY_NAME, "Origin": "http://evil.example"},
+            follow_redirects=False,
+        )
+        assert mismatched.status_code == 403
+
+
+def test_without_extra_names_a_proxy_name_is_refused(tmp_path):
+    with TestClient(create_app(tmp_path)) as client:
+        assert client.get("/", headers={"Host": PROXY_NAME}).status_code == 400
+
+
+def test_an_https_proxy_origin_passes_once_uvicorn_applies_forwarded_proto(tmp_path):
+    """`tailscale serve` sends Host: <name> and X-Forwarded-Proto: https from
+    127.0.0.1; uvicorn's default proxy-header handling makes the scheme https,
+    so the browser's https Origin matches."""
+    from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+
+    app = create_app(tmp_path, extra_trusted_hosts=(PROXY_NAME,))
+    # TestClient's peer is not 127.0.0.1, so trust it explicitly here.
+    proxied = ProxyHeadersMiddleware(app, trusted_hosts="*")
+    proxied.dependency_overrides = app.dependency_overrides  # for conftest
+    with TestClient(proxied) as client:
+        response = client.post(
+            "/broker-accounts",
+            data={"name": "經由代理"},
+            headers={
+                "Host": PROXY_NAME,
+                "Origin": f"https://{PROXY_NAME}",
+                "X-Forwarded-Proto": "https",
+                "X-Forwarded-For": "100.64.0.2",
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+        no_proto = client.post(
+            "/broker-accounts",
+            data={"name": "經由代理"},
+            headers={"Host": PROXY_NAME, "Origin": f"https://{PROXY_NAME}"},
+            follow_redirects=False,
+        )
+        assert no_proto.status_code == 403  # http scheme vs https Origin
+
+
+def test_extra_trusted_hosts_are_normalized():
+    hosts = trusted_hosts("127.0.0.1", ("MacAir.Local", "[FE80::2]"))
+    assert {"macair.local", "fe80::2"} <= hosts

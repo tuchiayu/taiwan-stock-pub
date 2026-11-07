@@ -56,7 +56,12 @@ SECURITY_HEADERS = {
 }
 
 
-def create_app(data_dir: Path, *, bind_host: str | None = None) -> FastAPI:
+def create_app(
+    data_dir: Path,
+    *,
+    bind_host: str | None = None,
+    extra_trusted_hosts: tuple[str, ...] = (),
+) -> FastAPI:
     data_dir = resolve_data_dir(data_dir)
 
     @asynccontextmanager
@@ -120,7 +125,7 @@ def create_app(data_dir: Path, *, bind_host: str | None = None) -> FastAPI:
         return response
 
     # Added last = outermost: an untrusted Host never reaches any route.
-    hosts = trusted_hosts(bind_host)
+    hosts = trusted_hosts(bind_host, extra_trusted_hosts)
     app.add_middleware(OriginCheckMiddleware, hosts=hosts)
     app.add_middleware(TrustedHostMiddleware, hosts=hosts)
     static_dir = Path(__file__).resolve().parent / "static"

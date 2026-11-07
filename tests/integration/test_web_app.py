@@ -1065,7 +1065,10 @@ def test_section_shortcuts_sit_outside_controls_and_load_script(client, path):
     assert re.search(
         r'<nav class="workspace-shortcuts"[^>]* data-section-shortcuts>', page
     )
-    assert '<script src="/static/section-shortcuts.js?v=1" defer></script>' in page
+    assert re.search(
+        r'<script src="/static/section-shortcuts\.js\?v=[0-9a-f]{12}" defer></script>',
+        page,
+    )
     assert client.get("/static/section-shortcuts.js").status_code == 200
 
 

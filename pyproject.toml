@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "taiwan-stock"
-version = "0.2.0"
+version = "0.3.0"
 description = "Local web app for tracking Taiwan stock & ETF holdings, dividends, and break-even prices with TWSE/TPEx data"
 readme = "README.md"
 requires-python = ">=3.13,<3.14"

@@ -229,6 +229,28 @@ def job_status(job_id: str, conn=Depends(get_db), data_dir=Depends(get_data_dir)
     return {**job, "summary": result_summary(job)}
 
 
+def cancel(job_id, conn, data_dir):
+    """Design 081: the same path as the CLI's Ctrl+C. A queued job is
+    interrupted at once (design 067); a running one stops at its next
+    progress check."""
+    job_status(job_id, conn, data_dir)
+    sync_jobs.request_cancel(conn, job_id)
+    return job_status(job_id, conn, data_dir)
+
+
+@router.post("/api/v2/sync-jobs/{job_id}/cancel")
+def cancel_job(job_id: str, conn=Depends(get_db), data_dir=Depends(get_data_dir)):
+    return cancel(job_id, conn, data_dir)
+
+
+@router.post("/sync-jobs/{job_id}/cancel")
+def cancel_job_form(
+    job_id: str, conn=Depends(get_db), data_dir=Depends(get_data_dir)
+) -> RedirectResponse:
+    cancel(job_id, conn, data_dir)
+    return RedirectResponse(f"/sync-jobs/{job_id}", 303)
+
+
 @router.get("/sync-jobs/{job_id}", response_class=HTMLResponse)
 def job_page(
     request: Request, job_id: str, conn=Depends(get_db), data_dir=Depends(get_data_dir)
@@ -253,6 +275,8 @@ def job_context(conn, job, error=None, active_job_id=None, request_key=None):
         "retry_key": request_key or new_id(),
         "retry_allowed": job["operation"] in WEB_OPERATIONS
         and job["status"] in RETRY_STATUSES,
+        "cancel_allowed": job["status"] in sync_jobs.ACTIVE
+        and not job["cancel_requested"],
         "retry_error": error,
         "active_job_id": active_job_id,
     }

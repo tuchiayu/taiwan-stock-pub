@@ -49,6 +49,7 @@ function page(initial, handler, href = 'http://localhost/', operation = 'prices'
   let timerId = 0;
   const events = {};
   const calls = [];
+  const prompts = [];
   const location = {href, assignments: [], replacements: [], assign(url) { this.assignments.push(String(url)); this.href = String(url); }, replace(url) { this.replacements.push(String(url)); this.href = String(url); }};
   const document = {
     hidden: Boolean(options.hidden),
@@ -62,6 +63,7 @@ function page(initial, handler, href = 'http://localhost/', operation = 'prices'
     history: {replaceState: (_, __, url) => { location.href = String(url); }},
     window: {addEventListener: (name, fn) => { events[name] = fn; }},
     performance: {now: () => now}, AbortSignal: {timeout: () => undefined},
+    confirm: (text) => { prompts.push(text); return options.confirm ?? true; },
     setInterval: (fn, delay) => { timers[delay] = fn; },
     setTimeout: (fn, delay) => { const id = ++timerId; timeouts.set(id, {fn, at: now + delay}); return id; },
     clearTimeout: (id) => { timeouts.delete(id); },
@@ -79,19 +81,19 @@ function page(initial, handler, href = 'http://localhost/', operation = 'prices'
     }
     now = end;
   }
-  return {button, label, icon, hint, control, form, messages, location, timers, events, calls, document, advance,
+  return {button, label, icon, hint, control, form, messages, location, timers, events, calls, prompts, document, advance,
     delays: () => [...timeouts.values()].map((timer) => timer.at - now),
     submit: () => handlers.submit({preventDefault() {}})};
 }
 (async () => {
-  // An existing CLI job restores its original elapsed time and blocks the form.
+  // An existing CLI job restores its original elapsed time; its button cancels it.
   let offline = false;
   const active = page({snapshot: snapshot([job()]), selected: null}, async () => {
     if (offline) throw new Error('offline');
     return reply(snapshot([job()]));
   });
-  assert(active.button.disabled);
-  assert.equal(active.label.textContent, '同步中…');
+  assert.equal(active.button.disabled, false);
+  assert.equal(active.label.textContent, '取消同步');
   assert.equal(active.form.attributes['aria-busy'], 'true');
   assert.match(active.messages.textContent, /00:30/);
   await flush();
@@ -104,13 +106,15 @@ function page(initial, handler, href = 'http://localhost/', operation = 'prices'
   active.events.pageshow();
   assert(active.button.disabled);
   await flush();
-  assert(active.button.disabled); // BFCache never unlocks an active job.
-  assert.equal(active.label.textContent, '同步中…');
+  // BFCache restores the cancel control, never the start one, for an active job.
+  assert.equal(active.label.textContent, '取消同步');
+  assert.equal(active.button.disabled, false);
 
-  // Preparation is distinct from a different operation holding a shared lock.
+  // A queued own job can be cancelled too; a different operation holding a
+  // shared lock still blocks.
   const queued = page({snapshot: snapshot([job('queued')]), selected: null}, async () => reply(snapshot([job('queued')])));
-  assert.equal(queued.label.textContent, '準備同步…');
-  assert(queued.button.disabled);
+  assert.equal(queued.label.textContent, '取消同步');
+  assert.equal(queued.button.disabled, false);
   const blockingJob = {...job(), operation: 'stock-dividends'};
   const conflictState = snapshot([blockingJob], ['stock-announcements']);
   const conflict = page({snapshot: conflictState, selected: null}, async () => reply(conflictState), undefined, 'stock-announcements');
@@ -158,8 +162,7 @@ function page(initial, handler, href = 'http://localhost/', operation = 'prices'
   await flush();
   assert.equal(ui.label.textContent, '確認同步狀態…');
   await ui.advance(2000);
-  assert(ui.button.disabled);
-  assert.equal(ui.label.textContent, '同步中…');
+  assert.equal(ui.label.textContent, '取消同步');
   assert.equal(new URL(ui.location.href).searchParams.get('job_id'), 'job');
   assert.equal(ui.calls.filter((call) => call.options.method === 'POST').length, 1);
   assert.match(ui.messages.textContent, /00:30/);
@@ -198,11 +201,10 @@ function page(initial, handler, href = 'http://localhost/', operation = 'prices'
         'http://localhost/?job_id=job', operation);
       await flush();
       assert.deepEqual(running.delays(), [2000]);
-      assert(running.button.disabled);
-      assert.equal(running.label.textContent, '準備同步…');
+      assert.equal(running.label.textContent, '取消同步');
       current = {...job(), operation};
       await running.advance(2000);
-      assert.equal(running.label.textContent, '同步中…');
+      assert.equal(running.label.textContent, '取消同步');
       assert.deepEqual(running.delays(), [2000]);
       current = {...job(status), operation};
       await running.advance(2000);
@@ -239,7 +241,7 @@ function page(initial, handler, href = 'http://localhost/', operation = 'prices'
   discovered = [job()];
   await idle.advance(1);
   assert.equal(idle.calls.length, 2);
-  assert(idle.button.disabled);
+  assert.equal(idle.label.textContent, '取消同步');
   assert.deepEqual(idle.delays(), [2000]);
 
   // Hidden tabs slow down; resuming/pageshow refreshes immediately with one timer.
@@ -320,6 +322,67 @@ function page(initial, handler, href = 'http://localhost/', operation = 'prices'
   assert(slow.calls.at(-1).url.includes('request_key=key'));
   assert.deepEqual(slow.delays(), [15000]);
 
+  // Design 081: declining the confirmation sends nothing.
+  const declined = page({snapshot: snapshot([job()]), selected: null}, async () => reply(snapshot([job()])),
+    undefined, 'prices', {confirm: false});
+  await flush();
+  await declined.submit();
+  assert.deepEqual(declined.prompts, ['確定取消同步？已完成的項目會保留，之後可以重試。']);
+  assert.equal(declined.calls.filter((call) => call.options.method === 'POST').length, 0);
+  assert.equal(declined.label.textContent, '取消同步');
+
+  // Confirming cancels the own job, locks the button until it stops, then the
+  // finished job reloads the page like any other result.
+  let backend = job();
+  const cancelReply = deferred();
+  const cancelled = page({snapshot: snapshot([backend]), selected: null}, async (url, options) => {
+    if (options.method === 'POST') return cancelReply.promise;
+    return reply(snapshot(['queued', 'running'].includes(backend.status) ? [backend] : []));
+  });
+  await flush();
+  const pending = cancelled.submit();
+  assert.equal(cancelled.label.textContent, '取消中…');
+  assert(cancelled.button.disabled);
+  cancelled.submit(); // A second click while the request is pending sends nothing.
+  const posts = cancelled.calls.filter((call) => call.options.method === 'POST');
+  assert.deepEqual(posts.map((call) => call.url), ['/api/v2/sync-jobs/job/cancel']);
+  backend = {...job(), cancel_requested: 1};
+  cancelReply.resolve(reply(backend));
+  await pending;
+  await flush();
+  assert.equal(cancelled.label.textContent, '取消中…');
+  assert(cancelled.button.disabled);
+  assert.match(cancelled.hint.textContent, /等目前的請求結束後停止/);
+  await cancelled.advance(2000);
+  assert.equal(cancelled.label.textContent, '取消中…');
+  backend = {...job('interrupted'), cancel_requested: 1};
+  await cancelled.advance(2000);
+  assert.equal(cancelled.location.replacements.length, 1);
+  assert.equal(new URL(cancelled.location.href).searchParams.get('job_done'), 'job');
+  assert.equal(cancelled.button.disabled, false);
+  assert.equal(cancelled.label.textContent, '同步最新股價');
+
+  // A failed cancel request never shows the job as cancelled or restartable.
+  const lost = page({snapshot: snapshot([job()]), selected: null}, async (_, options) => {
+    if (options.method === 'POST') throw new Error('offline');
+    return reply(snapshot([job()]));
+  });
+  await flush();
+  await lost.submit();
+  assert(lost.button.disabled);
+  assert.equal(lost.label.textContent, '確認同步狀態…');
+  await flush();
+  assert.equal(lost.label.textContent, '取消同步');
+
+  // Another operation's job is never cancelled from this button.
+  const otherState = snapshot([{...job(), operation: 'stock-dividends'}], ['stock-announcements']);
+  const other = page({snapshot: otherState, selected: null}, async () => reply(otherState), undefined, 'stock-announcements');
+  await flush();
+  await other.submit();
+  assert.equal(other.prompts.length, 0);
+  assert.equal(other.calls.filter((call) => call.options.method === 'POST').length, 0);
+  assert.equal(other.label.textContent, '其他同步中…');
+
   // The dedicated detail page discovers its selection even without a URL query.
   const detail = page({snapshot: snapshot(), selected: null}, async (url) =>
     reply(url.endsWith('/job') ? job('success') : snapshot()), 'http://localhost/sync-jobs/job', 'prices', {detailId: 'job'});
@@ -329,4 +392,5 @@ function page(initial, handler, href = 'http://localhost/', operation = 'prices'
   assert.equal(detail.location.replacements.length, 1);
   console.log('adaptive polling: all Web operations, terminal detail stop, idle discovery, visibility, single timer passed');
   console.log('sync UI: elapsed restore, BFCache, disconnect, stale GET, uncertain POST, terminal refresh passed');
+  console.log('cancel: confirmation, pending lock, cancelling state, failure, other operation passed');
 })().catch((error) => { console.error(error); process.exitCode = 1; });

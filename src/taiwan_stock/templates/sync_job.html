@@ -1,7 +1,9 @@
 {% extends "base.html" %}
 {% block title %}同步任務 - 台灣股市數據工具{% endblock %}
 {% block content %}
-<section class="workspace-controls" aria-label="同步任務操作"><div class="workspace-heading"><h1>同步任務</h1><div class="actions page-actions"><a class="button secondary" href="/">返回我的持股</a><a class="button secondary" href="/sync-jobs/{{ job.id }}">重新取得狀態</a></div></div><div class="workspace-toolbar">  {% if retry_allowed %}<form method="post" action="/sync-jobs/{{ job.id }}/retry"><input type="hidden" name="request_key" value="{{ retry_key }}"><button type="submit" class="secondary">重試未完成項目</button></form>
+<section class="workspace-controls" aria-label="同步任務操作"><div class="workspace-heading"><h1>同步任務</h1><div class="actions page-actions"><a class="button secondary" href="/">返回我的持股</a><a class="button secondary" href="/sync-jobs/{{ job.id }}">重新取得狀態</a></div></div><div class="workspace-toolbar">  {% if cancel_allowed %}<form method="post" action="/sync-jobs/{{ job.id }}/cancel"><button type="submit" class="secondary">取消同步</button></form>
+  {% elif job.status in ['queued','running'] and job.cancel_requested %}<p role="status">取消中，等目前的請求結束後停止。</p>
+  {% elif retry_allowed %}<form method="post" action="/sync-jobs/{{ job.id }}/retry"><input type="hidden" name="request_key" value="{{ retry_key }}"><button type="submit" class="secondary">重試未完成項目</button></form>
   {% elif job.status in ['partial','failed','interrupted'] %}<p>此操作僅提供終端機重試：<code>taiwan-stock sync retry-job {{ job.id }}</code></p>{% endif %}
 </div></section>
 <section class="panel workspace-data" data-sync-detail="{{ job.id }}"><div class="workspace-data-heading"><h2>執行結果</h2></div><div class="panel-body workspace-result">
